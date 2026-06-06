@@ -277,7 +277,10 @@ class AnalysisController(QObject):
             # Save to disk
             tag = output_tag or str(int(time.time()))
             try:
-                save_results(result, folder, tag=tag, fmt="csv")
+                # xlsx preserves the multi-sheet (Summary / Raw) layout shown
+                # in the results window; save_results falls back to a single
+                # sheet automatically when only one is present.
+                save_results(result, folder, tag=tag, fmt="xlsx")
             except Exception:
                 pass
 

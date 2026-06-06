@@ -5,6 +5,7 @@ AnalysisResult wraps whatever dict your analyze() method returns
 and provides helpers for aggregation, DataFrame export, and serialization.
 """
 
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
 import pandas as pd
@@ -45,6 +46,10 @@ class AnalysisResult:
     warnings: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    # Extra named output sheets (e.g. a module-specific summary).  These are
+    # merged ahead of the generic "Raw" / "Summary" sheets by :meth:`to_sheets`.
+    sheets: Dict[str, pd.DataFrame] = field(default_factory=dict)
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -56,31 +61,6 @@ class AnalysisResult:
 
     def add_warning(self, msg: str) -> None:
         self.warnings.append(msg)
-
-    # ------------------------------------------------------------------
-    # DataFrame export
-    # ------------------------------------------------------------------
-
-    def to_dataframe(self) -> pd.DataFrame:
-        """
-        Flatten result data into a single DataFrame.
-
-        * If there are *sweep_results*, each sweep becomes a row and the
-          file-level ``data`` dict is broadcast across all rows.
-        * Otherwise a single-row DataFrame is built from ``data``.
-        """
-        if self.sweep_results:
-            rows = []
-            for i, sweep_dict in enumerate(self.sweep_results):
-                row = {"file": self.file_path, "sweep": i}
-                row.update(self.data)          # file-level columns
-                row.update(sweep_dict)         # sweep-level columns
-                rows.append(row)
-            return pd.DataFrame(rows)
-        else:
-            row = {"file": self.file_path}
-            row.update(self.data)
-            return pd.DataFrame([row])
 
     # ------------------------------------------------------------------
     # Aggregation
@@ -120,8 +100,21 @@ class AnalysisResult:
         combined._combined_df = combined_df
         return combined
 
-    def to_dataframe(self) -> pd.DataFrame:  # noqa: F811  -- intentional redefinition
-        """Return the DataFrame, using the pre-built one if available."""
+    # ------------------------------------------------------------------
+    # DataFrame export
+    # ------------------------------------------------------------------
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """
+        Return the "raw" DataFrame -- one row per sweep (or per file).
+
+        For a combined/batch result this returns the pre-built DataFrame
+        stashed by :meth:`concatenate`; otherwise it is built on the fly:
+
+        * If there are *sweep_results*, each sweep becomes a row and the
+          file-level ``data`` dict is broadcast across all rows.
+        * Otherwise a single-row DataFrame is built from ``data``.
+        """
         if hasattr(self, "_combined_df"):
             return self._combined_df
         return self._build_dataframe()
@@ -140,6 +133,66 @@ class AnalysisResult:
             row = {"file": self.file_path}
             row.update(self.data)
             return pd.DataFrame([row])
+
+    # ------------------------------------------------------------------
+    # Summary / multi-sheet export
+    # ------------------------------------------------------------------
+
+    def summary_dataframe(self) -> pd.DataFrame:
+        """
+        Build a per-file summary: one row per source file.
+
+        The raw DataFrame (one row per sweep) is grouped by its ``file``
+        column and every *numeric scalar* column is reduced to its mean.
+        List-valued columns (e.g. per-spike arrays like ``peak_t``) are
+        dropped automatically because they are not numeric dtypes.
+
+        Two extra columns are added:
+
+        * ``n_sweeps`` -- number of raw rows that went into each file.
+        * ``total_spike_count`` -- sum of ``spike_count`` per file, when a
+          ``spike_count`` column is present.
+
+        Returns an empty DataFrame if there is no data or no ``file`` column.
+        """
+        raw = self.to_dataframe()
+        if raw is None or raw.empty or "file" not in raw.columns:
+            return pd.DataFrame()
+
+        grouped = raw.groupby("file", sort=False)
+
+        numeric = raw.select_dtypes(include="number")
+        # "sweep" is a row index, not a feature -- keep it out of the means.
+        numeric = numeric.drop(columns=[c for c in ("sweep",) if c in numeric.columns])
+
+        if numeric.shape[1] > 0:
+            summary = numeric.groupby(raw["file"], sort=False).mean()
+        else:
+            # No numeric features -- still emit one row per file.
+            summary = pd.DataFrame(index=grouped.size().index)
+
+        summary.insert(0, "n_sweeps", grouped.size())
+
+        if "spike_count" in raw.columns:
+            summary["total_spike_count"] = grouped["spike_count"].sum()
+
+        return summary.reset_index()
+
+    def to_sheets(self) -> "OrderedDict[str, pd.DataFrame]":
+        """
+        Return the named sheets to display / export, in tab order.
+
+        Always includes a generic ``"Summary"`` (one row per file) followed
+        by ``"Raw"`` (one row per sweep).  Any module-supplied entries in
+        :attr:`sheets` are inserted ahead of these so a module can override
+        or augment the defaults.
+        """
+        out: "OrderedDict[str, pd.DataFrame]" = OrderedDict()
+        for key, frame in self.sheets.items():
+            out[key] = frame
+        out.setdefault("Summary", self.summary_dataframe())
+        out.setdefault("Raw", self.to_dataframe())
+        return out
 
     # ------------------------------------------------------------------
     # Serialization

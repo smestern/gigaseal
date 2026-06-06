@@ -153,7 +153,7 @@ class FilePanel(QWidget):
             progress.setValue(idx)
             try:
                 from gigaseal.dataset import cellData
-                cd = cellData(path)
+                cd = cellData(path, loadData=False)
                 proto = getattr(cd, "protocol", "")
                 if proto:
                     protocols.add(proto)

@@ -2,12 +2,12 @@ import numpy as np
 import pyabf
 
 
-def loadABF(file_path, return_obj=False):
+def loadABF(file_path, return_obj=False, load_data=True):
     '''
     Employs pyABF to generate numpy arrays of the ABF data. Optionally returns abf object.
     Same I/O as loadNWB
     '''
-    abf = pyabf.ABF(file_path)
+    abf = pyabf.ABF(file_path, loadData=load_data)
     dataX = []
     dataY = []
     dataC = []

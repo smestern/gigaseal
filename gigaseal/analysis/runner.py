@@ -172,17 +172,30 @@ def save_results(
         Path to the saved file.
     """
     os.makedirs(output_dir, exist_ok=True)
-    df = result.to_dataframe()
 
     suffix = f"_{tag}" if tag else ""
     basename = f"{result.name}{suffix}"
 
-    if fmt == "xlsx":
+    # Drop empty sheets so a result that only has a "Raw" table still
+    # honours the requested ``fmt`` instead of being forced into a workbook.
+    sheets = {k: v for k, v in result.to_sheets().items()
+              if v is not None and not v.empty}
+
+    # Multiple non-empty sheets can only be represented in a workbook --
+    # promote a csv request to xlsx so no sheet is silently dropped.
+    if len(sheets) > 1:
         path = os.path.join(output_dir, f"{basename}.xlsx")
-        df.to_excel(path, index=False)
+        with pd.ExcelWriter(path) as writer:
+            for name, sheet_df in sheets.items():
+                # Excel sheet names are capped at 31 chars.
+                safe_name = str(name)[:31]
+                sheet_df.to_excel(writer, sheet_name=safe_name, index=False)
+    elif fmt == "xlsx":
+        path = os.path.join(output_dir, f"{basename}.xlsx")
+        result.to_dataframe().to_excel(path, index=False)
     else:
         path = os.path.join(output_dir, f"{basename}.csv")
-        df.to_csv(path, index=False)
+        result.to_dataframe().to_csv(path, index=False)
 
     logger.info(f"Saved results to {path}")
     return path
@@ -206,7 +219,7 @@ def _filter_by_protocol(filelist, protocol_filter):
     pf_lower = protocol_filter.lower()
     for fp in filelist:
         try:
-            data = cellData(fp)
+            data = cellData(fp, loadData=False)
             if pf_lower in data.protocol.lower():
                 filtered.append(fp)
         except Exception:

@@ -101,6 +101,92 @@ class TestAnalysisResult:
 
 
 # ======================================================================
+# 1b) Summary sheet + multi-sheet export
+# ======================================================================
+
+class TestSummarySheets:
+    def _make_batch_result(self):
+        """Combined result mimicking a per-sweep spike batch over 2 files."""
+        from gigaseal.analysis.result import AnalysisResult
+        r1 = AnalysisResult(
+            name="spike", file_path="a.abf",
+            sweep_results=[
+                {"spike_count": 2, "rate": 10.0, "peak_t": [0.1, 0.2]},
+                {"spike_count": 4, "rate": 20.0, "peak_t": [0.1, 0.2, 0.3, 0.4]},
+            ],
+        )
+        r2 = AnalysisResult(
+            name="spike", file_path="b.abf",
+            sweep_results=[
+                {"spike_count": 0, "rate": 0.0, "peak_t": []},
+            ],
+        )
+        return AnalysisResult.concatenate([r1, r2])
+
+    def test_summary_one_row_per_file(self):
+        combined = self._make_batch_result()
+        summary = combined.summary_dataframe()
+        assert len(summary) == 2
+        assert set(summary["file"]) == {"a.abf", "b.abf"}
+
+    def test_summary_n_sweeps_and_means(self):
+        combined = self._make_batch_result()
+        summary = combined.summary_dataframe().set_index("file")
+        assert summary.loc["a.abf", "n_sweeps"] == 2
+        assert summary.loc["b.abf", "n_sweeps"] == 1
+        # mean rate for a.abf = (10 + 20) / 2
+        assert summary.loc["a.abf", "rate"] == pytest.approx(15.0)
+
+    def test_summary_drops_list_columns(self):
+        combined = self._make_batch_result()
+        summary = combined.summary_dataframe()
+        # peak_t holds lists -> not numeric -> excluded from the summary
+        assert "peak_t" not in summary.columns
+        # sweep is a row index, not a feature
+        assert "sweep" not in summary.columns
+
+    def test_summary_total_spike_count(self):
+        combined = self._make_batch_result()
+        summary = combined.summary_dataframe().set_index("file")
+        assert summary.loc["a.abf", "total_spike_count"] == 6
+        assert summary.loc["b.abf", "total_spike_count"] == 0
+
+    def test_summary_empty_result(self):
+        from gigaseal.analysis.result import AnalysisResult
+        # A batch where the only file failed -> combined raw frame is empty.
+        failed = AnalysisResult(name="spike", file_path="a.abf")
+        failed.add_error("boom")
+        combined = AnalysisResult.concatenate([failed])
+        assert combined.to_dataframe().empty
+        assert combined.summary_dataframe().empty
+
+    def test_to_sheets_order_and_contents(self):
+        combined = self._make_batch_result()
+        sheets = combined.to_sheets()
+        assert list(sheets.keys()) == ["Summary", "Raw"]
+        pd.testing.assert_frame_equal(sheets["Raw"], combined.to_dataframe())
+        assert len(sheets["Summary"]) == 2
+
+    def test_to_sheets_respects_module_override(self):
+        from gigaseal.analysis.result import AnalysisResult
+        custom = pd.DataFrame({"x": [1, 2]})
+        r = AnalysisResult(name="t", data={"v": 1}, sheets={"Custom": custom})
+        sheets = r.to_sheets()
+        assert list(sheets.keys())[0] == "Custom"
+        assert "Summary" in sheets and "Raw" in sheets
+
+    def test_save_results_multi_sheet_xlsx(self, tmp_path):
+        from gigaseal.analysis.runner import save_results
+        combined = self._make_batch_result()
+        # fmt="csv" should be promoted to xlsx because there are >1 sheets
+        path = save_results(combined, str(tmp_path), tag="t1", fmt="csv")
+        assert path.endswith(".xlsx")
+        book = pd.read_excel(path, sheet_name=None)
+        assert set(book.keys()) == {"Summary", "Raw"}
+        assert len(book["Summary"]) == 2
+
+
+# ======================================================================
 # 2) AnalysisBase — subclassing and parameter introspection
 # ======================================================================
 

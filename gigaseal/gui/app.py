@@ -293,9 +293,11 @@ class MainWindow(QMainWindow):
         try:
             if isinstance(result, pd.DataFrame):
                 self._results_panel.set_dataframe(result)
+            elif hasattr(result, "to_sheets"):
+                # AnalysisResult — show Summary / Raw (and any module sheets) as tabs.
+                self._results_panel.set_sheets(result.to_sheets())
             else:
-                df = result.to_dataframe()
-                self._results_panel.set_dataframe(df)
+                self._results_panel.set_dataframe(result.to_dataframe())
         except Exception as exc:
             self._status.showMessage(f"Batch done but could not display: {exc}")
         self._status.showMessage("Batch analysis complete")

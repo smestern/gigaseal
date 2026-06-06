@@ -165,6 +165,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Directory containing a pre-generated database",
     )
 
+    # --- web-analysis ---------------------------------------------------
+    p_wa = sub.add_parser(
+        "web-analysis",
+        help="Launch the interactive analysis web app (Flask)",
+    )
+    p_wa.add_argument(
+        "--profile", choices=["public", "lab"], default=None,
+        help="Deployment profile (sets GIGASEAL_WEB_PROFILE). Default: lab.",
+    )
+    p_wa.add_argument(
+        "--host", default="127.0.0.1",
+        help="Bind host (default 127.0.0.1; use 0.0.0.0 to expose).",
+    )
+    p_wa.add_argument("--port", type=int, default=8000, help="Bind port.")
+    p_wa.add_argument(
+        "--dev", action="store_true",
+        help="Run Flask's dev server with debug=True (do not use in production).",
+    )
+
     # --- organize-by-protocol ------------------------------------------
     p_org = sub.add_parser(
         "organize-by-protocol",
@@ -397,6 +416,36 @@ def _cmd_web_viz(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_web_analysis(args: argparse.Namespace) -> int:
+    if args.profile:
+        os.environ["GIGASEAL_WEB_PROFILE"] = args.profile
+    try:
+        from .webViz.analysis_web import create_app
+    except ImportError as exc:
+        print(
+            f"error: could not import analysis web app: {exc}\n"
+            f"Install web extras with: pip install 'gigaseal[web]'",
+            file=sys.stderr,
+        )
+        return 1
+    app = create_app()
+    cfg = app.extensions["gigaseal_config"]
+    print(
+        f"gigaseal analysis web · profile={cfg.profile} · "
+        f"http://{args.host}:{args.port}",
+        file=sys.stderr,
+    )
+    if not args.dev:
+        print(
+            "warning: Flask dev server is single-threaded. "
+            "For production, run: "
+            "gunicorn -w 2 -b 0.0.0.0:8000 gigaseal.webViz.analysis_web.wsgi:app",
+            file=sys.stderr,
+        )
+    app.run(host=args.host, port=args.port, debug=args.dev, threaded=True)
+    return 0
+
+
 def _cmd_organize_by_protocol(args: argparse.Namespace) -> int:
     import shutil
     try:
@@ -576,6 +625,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _cmd_gui(args)
     if args.command == "web-viz":
         return _cmd_web_viz(args)
+    if args.command == "web-analysis":
+        return _cmd_web_analysis(args)
     if args.command == "organize-by-protocol":
         return _cmd_organize_by_protocol(args)
     if args.command == "convert-config":

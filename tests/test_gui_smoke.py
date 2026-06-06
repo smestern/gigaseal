@@ -156,3 +156,30 @@ def test_results_panel_csv_roundtrip(qapp, tmp_path):
         )
     finally:
         panel.deleteLater()
+
+
+def test_results_panel_set_sheets_tabs(qapp):
+    """set_sheets builds one tab per non-empty sheet and skips empties."""
+    from collections import OrderedDict
+    from gigaseal.gui.panels.results_panel import ResultsPanel
+
+    panel = ResultsPanel()
+    try:
+        sheets = OrderedDict([
+            ("Summary", pd.DataFrame({"filename": ["a.abf"], "n_sweeps": [3]})),
+            ("Raw", pd.DataFrame({"filename": ["a.abf", "a.abf"], "spike_count": [1, 2]})),
+            ("Empty", pd.DataFrame()),
+        ])
+        panel.set_sheets(sheets, index_col=None)
+
+        assert panel._tabs.count() == 2
+        labels = [panel._tabs.tabText(i) for i in range(panel._tabs.count())]
+        assert labels == ["Summary", "Raw"]
+
+        # Active-tab DataFrame and full sheet round-trip
+        panel._tabs.setCurrentIndex(0)
+        assert "n_sweeps" in panel.get_dataframe().columns
+        assert set(panel.get_sheets().keys()) == {"Summary", "Raw"}
+    finally:
+        panel.deleteLater()
+

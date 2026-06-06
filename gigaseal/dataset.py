@@ -33,18 +33,19 @@ class cellData(object):
         clampMode (optional): str, the clamp mode of the data (default: None)
         stimUnits (optional): str, the units of the stimulus data (default: 'pA')
         respUnits (optional): str, the units of the response data (default: 'mV')
+        loadData (optional): bool, whether to load the data immediately (default: True)
     returns:
         cellData object
     """
 
-    def __init__(self, file=None, dataX=None, dataY=None, dataC=None, name=None, protocolList=None, clampMode=None, stimUnits='pA', respUnits='mV'):
+    def __init__(self, file=None, dataX=None, dataY=None, dataC=None, name=None, protocolList=None, clampMode=None, stimUnits='pA', respUnits='mV', loadData=True):
         logger.info(f"Creating cellData object")
         # if the file is not none, then we are loading from a file
         self.protocolList = protocolList
         if file is not None:
             logger.info(f"Loading data from file: {file}")
             #if protocol list is provided, set the protocol
-            self.dataX, self.dataY, self.dataC, self._file_obj = loadFile(file, return_obj=True)
+            self.dataX, self.dataY, self.dataC, self._file_obj = loadFile(file, load_data=loadData, return_obj=True)
             self.data = [self.dataX, self.dataY, self.dataC]
             self.file = file
             self.fileName = file.split('/')[-1]
