@@ -4,7 +4,17 @@
 const $ = (sel) => document.querySelector(sel);
 const api = (path, opts = {}) =>
   fetch(path, { credentials: "same-origin", ...opts }).then(async (r) => {
-    const body = await r.json().catch(() => ({}));
+    const text = await r.text();
+    let body = {};
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch (err) {
+        // Server returned non-JSON (or non-spec JSON like NaN/Infinity).
+        // Surface it instead of pretending the request succeeded.
+        if (r.ok) throw new Error(`invalid JSON from ${path}: ${err.message}`);
+      }
+    }
     if (!r.ok) throw new Error(body.error || r.statusText);
     return body;
   });
@@ -192,9 +202,17 @@ function appendSpikeMarkers(traces) {
   if (!state.job?.preview) return;
   // Heuristic: look for columns named threshold_time / peak_t / spike_t.
   const candidates = ["threshold_t", "threshold_time", "peak_t", "peak_time", "spike_time"];
-  const rows = state.job.preview.filter(
-    (r) => r.file === state.currentFile || (r.filename || "").endsWith(state.currentFile)
-  );
+  const matchesCurrent = (r) => {
+    const file = typeof r.file === "string" ? r.file : "";
+    const filename = typeof r.filename === "string" ? r.filename : "";
+    return (
+      file === state.currentFile ||
+      file.endsWith(state.currentFile) ||
+      filename === state.currentFile ||
+      filename.endsWith(state.currentFile)
+    );
+  };
+  const rows = state.job.preview.filter(matchesCurrent);
   if (!rows.length) return;
   const col = candidates.find((c) => c in rows[0]);
   if (!col) return;
@@ -354,8 +372,27 @@ function renderResults(job) {
   $("#export-xlsx").onclick = () =>
     window.location.href = `/api/jobs/${job.job_id}/export.xlsx`;
 
+  // Some analysis modules return nested dict-of-dict cells (e.g. spike
+  // module emits ``spike_df.to_dict()`` → {col: {row_idx: val}}). Render
+  // those as compact JSON so the table is readable instead of showing
+  // "[object Object]".
+  const cellFormatter = (cell) => {
+    const v = cell.getValue();
+    if (v == null) return "";
+    if (typeof v === "object") {
+      // Unwrap single-key dicts (very common — pandas {0: value}).
+      const keys = Object.keys(v);
+      if (!Array.isArray(v) && keys.length === 1) {
+        const inner = v[keys[0]];
+        return inner == null ? "" : String(inner);
+      }
+      try { return JSON.stringify(v); } catch { return String(v); }
+    }
+    return v;
+  };
   const cols = (job.columns || []).map((c) => ({
     title: c, field: c, headerSort: true, resizable: true,
+    formatter: cellFormatter,
   }));
   if (state.table) { state.table.destroy(); state.table = null; }
   if (typeof Tabulator === "undefined") {

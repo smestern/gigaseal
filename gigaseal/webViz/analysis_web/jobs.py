@@ -19,9 +19,48 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import math
+
+import numpy as np
+
 from .config import WebConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _json_safe(value: Any) -> Any:
+    """Recursively coerce NaN / ±inf / numpy scalars into JSON-friendly values.
+
+    DataFrame cells frequently hold nested dicts or numpy arrays whose inner
+    NaN / Infinity tokens slip past pandas' top-level ``where(notna(), None)``
+    sanitization and break ``JSON.parse`` in the browser.
+    """
+    if value is None:
+        return None
+    if isinstance(value, float):
+        return None if not math.isfinite(value) else value
+    if isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, np.generic):
+        return _json_safe(value.item())
+    if isinstance(value, np.ndarray):
+        return [_json_safe(v) for v in value.tolist()]
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(v) for v in value]
+    try:
+        import pandas as pd
+
+        if isinstance(value, pd.Series):
+            return [_json_safe(v) for v in value.tolist()]
+        if isinstance(value, pd.DataFrame):
+            return [_json_safe(r) for r in value.to_dict(orient="records")]
+        if pd.isna(value):
+            return None
+    except Exception:  # noqa: BLE001
+        pass
+    return str(value)
 
 
 @dataclass
@@ -174,9 +213,17 @@ class JobManager:
             job.result_path = csv_path
             job.columns = list(df.columns)
             job.row_count = int(len(df))
-            job.preview_rows = (
-                df.head(50).where(df.head(50).notna(), None).to_dict(orient="records")
+            # Replace NaN *and* ±inf with None so the JSON response stays
+            # spec-compliant; the browser's JSON.parse rejects literal NaN /
+            # Infinity tokens and the poller would otherwise see an empty
+            # body and never observe status == "done".
+            preview = df.head(50).replace([np.inf, -np.inf], np.nan)
+            raw_rows = preview.where(preview.notna(), None).to_dict(
+                orient="records"
             )
+            # DataFrame cells can themselves contain dicts/arrays whose
+            # nested NaNs survive the top-level sanitization; walk them.
+            job.preview_rows = [_json_safe(row) for row in raw_rows]
             job.progress = 1.0
             job.status = "done"
         except Exception as exc:  # noqa: BLE001

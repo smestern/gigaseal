@@ -40,6 +40,12 @@ def create_app(config: Optional[WebConfig] = None) -> Flask:
         static_url_path="/static",
     )
     app.config["SECRET_KEY"] = cfg.secret_key
+    # Reject NaN / Infinity in responses — browsers' JSON.parse can't read
+    # them, so emitting them silently breaks the polling UI.
+    try:
+        app.json.allow_nan = False  # Flask >= 2.2
+    except AttributeError:  # pragma: no cover — older Flask
+        pass
     if cfg.max_upload_bytes is not None:
         # Flask checks this against the Content-Length header before reading
         # the body. Add a small fudge factor for multipart overhead.

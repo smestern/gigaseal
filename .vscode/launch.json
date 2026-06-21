@@ -5,10 +5,19 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Module",
+            "name": "New GUI",
             "type": "debugpy",
             "request": "launch",
             "module": "gigaseal.gui.app"
+        },
+        {
+            "name": "Python Debugger: Module",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "gigaseal.cli",
+            "args": [
+                "web-analysis",
+            ]
         },
         {
             "name": "Python: Current File",
