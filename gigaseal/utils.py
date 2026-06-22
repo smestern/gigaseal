@@ -5,7 +5,7 @@ import functools
 import inspect
 import numpy as np
 
-DEBUG = False
+DEBUG = True
 
 
 def debug_wrap(func, returns=None):

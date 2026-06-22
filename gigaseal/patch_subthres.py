@@ -150,7 +150,11 @@ def exp_decay_factor(dataT,dataV,dataI, time_aft, abf_id='abf', plot=False, root
         time_aft = 1
 
     diff_I = np.diff(dataI) #find the points where current changes, we assume the first one is the start of the hyperpolarization
-    downwardinfl = np.nonzero(np.where(diff_I<0, diff_I, 0))[0][0] #find the first point where the current goes down, we assume this is the start of the hyperpolarization
+    downwardinfl = np.nonzero(np.where(diff_I<0, diff_I, 0))[0] #find the first point where the current goes down, we assume this is the start of the hyperpolarization
+    if len(downwardinfl) == 0: #if there are no points where the current goes down, we likely have a problem with the data, and we will return nans
+        return np.nan, np.nan, np.array([np.nan,np.nan,np.nan,np.nan,np.nan]), np.nan, np.nan, np.nan
+    else:
+        downwardinfl = downwardinfl[0] #take the first point where the current goes down, we assume this is the start of the hyperpolarization
     end_index = downwardinfl + int((np.argmax(diff_I)- downwardinfl) * time_aft) #we want to analyze the segment of the hyperpolarization that is within the time_aft proportion of the total hyperpolarization, we assume the total hyperpolarization ends at the point where the current goes back up, which should be the next point where the diff_I goes positive, but to be safe we will just use the max of diff_I as the end point, and then take a proportion of that distance from the start of the hyperpolarization. This is because sometimes the current may not go back up within the sweep, or there may be noise that causes false positives in the diff_I.
     
     if end_index - downwardinfl < 10: #if the end index is too close to the start index, we likely have a problem with the data, and we will return nans
