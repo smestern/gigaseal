@@ -709,13 +709,22 @@ class DatabaseBuilderWindow(QMainWindow):
             self._on_save_as()
 
     def _on_save_as(self):
-        path, _ = QFileDialog.getSaveFileName(
+        path, selected_filter = QFileDialog.getSaveFileName(
             self, "Save Database As", "",
-            "Excel Files (*.xlsx);;All Files (*)"
+            "Excel Files (*.xlsx);;Grouped CSV (*.csv);;Flat CSV (*.csv);;All Files (*)"
         )
         if not path:
             return
-        self._db.save_xlsx(path)
+        if selected_filter.startswith("Grouped CSV"):
+            if not path.endswith(".csv"):
+                path += ".csv"
+            self._db.save_csv(path, grouped=True)
+        elif selected_filter.startswith("Flat CSV"):
+            if not path.endswith(".csv"):
+                path += ".csv"
+            self._db.save_csv(path, grouped=False)
+        else:
+            self._db.save_xlsx(path)
         self._status.showMessage(f"Saved to {path}")
 
     def _on_export_csv(self):
@@ -735,7 +744,11 @@ class DatabaseBuilderWindow(QMainWindow):
         )
         if not path:
             return
-        self._db.load_csv(path)
+        # Lazy import to avoid pulling Qt-dialog code at module load
+        from ._lab_csv_dialog import LabCSVImportDialog
+        dlg = LabCSVImportDialog(path, self._db, self)
+        if dlg.exec() != dlg.DialogCode.Accepted:
+            return
         self._refresh_table()
         self._update_combo_options()
         self._status.showMessage(

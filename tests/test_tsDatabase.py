@@ -72,6 +72,24 @@ class TestExperimentalStructure:
         exp.remove_protocol("IC1")
         assert "IC1" not in exp.protocol_names()
 
+    def test_group_field_round_trip(self):
+        exp = experimentalStructure()
+        exp.add_protocol("Sim1_0hz", group="SIM1")
+        exp.add_protocol("IC1", group="PRE / NETCLAMP")
+        exp.add_protocol("Sag")  # no group → empty
+        df = exp.to_dataframe()
+        assert "group" in df.columns
+        exp2 = experimentalStructure.from_dataframe(df)
+        assert exp2.get_protocol("Sim1_0hz")["group"] == "SIM1"
+        assert exp2.get_protocol("IC1")["group"] == "PRE / NETCLAMP"
+        assert exp2.get_protocol("Sag")["group"] == ""
+
+    def test_group_first_write_wins(self):
+        exp = experimentalStructure()
+        exp.add_protocol("IC1", group="PRE")
+        exp.add_protocol("IC1", group="POST")  # second call must not overwrite
+        assert exp.get_protocol("IC1")["group"] == "PRE"
+
 
 # ======================================================================
 # tsDatabase — cell CRUD
@@ -292,6 +310,23 @@ class TestCSVRoundTrip:
         db2.load_csv(path)
         assert db2.cell_count() == 1
         assert "C1" in db2.cell_names()
+
+    def test_default_save_is_flat_single_row_header(self, tmp_path):
+        db = tsDatabase()
+        db.add_cell("C1", metadata={"group": "stress"})
+        db.add_protocol("IC1")
+        db.assign_file("C1", "IC1", "/file.abf")
+
+        path = str(tmp_path / "flat.csv")
+        db.save_csv(path)  # default → grouped=False
+
+        with open(path) as f:
+            first_line = f.readline().rstrip("\n")
+            second_line = f.readline().rstrip("\n")
+        # Header row must contain column names directly, not group labels
+        assert "IC1" in first_line
+        # First data row carries the cell name
+        assert second_line.startswith("C1,")
 
 
 # ======================================================================
