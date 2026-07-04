@@ -96,53 +96,6 @@ def rmp_abf(abf, time=30, crop=True):
      #return pd.DataFrame
 
  
-def find_zero(realC):
-    #expects 1d array
-    zero_ind = np.where(realC == 0)[0]
-    ##Account for time constant?
-    diff = np.diff(zero_ind)
-    if np.amax(diff) > 1:
-        diff_jump = np.where(diff>2)[0][0]
-        if diff_jump + 3000 > realC.shape[0]:
-            _hop = diff_jump
-        else:
-            _hop = diff_jump + 3000
-
-        zero_ind_crop = np.hstack((zero_ind[:diff_jump], zero_ind[_hop:]))
-    else: 
-        zero_ind_crop = zero_ind
-    return zero_ind_crop
-
-def compute_vm_drift(realY, zero_ind):
-    sweep_wise_mean = np.mean(realY[:,zero_ind], axis=1)
-    mean_drift = np.abs(np.amax(sweep_wise_mean) - np.amin(sweep_wise_mean))
-    abs_drift = np.abs(np.amax(realY[:,zero_ind]) - np.amin(realY[:,zero_ind]))
-
-    return mean_drift, abs_drift
-
-
-def compute_rms(realY, zero_ind):
-    mean = np.mean(realY[:,zero_ind], axis=1)
-    rms = []
-    for x in np.arange(mean.shape[0]):
-        temp = np.sqrt(np.mean(np.square(realY[x,zero_ind] - mean[x])))
-        rms = np.hstack((rms, temp))
-    full_mean = np.mean(rms)
-    return full_mean, np.amax(rms)
-
-def run_qc(realY, realC):
-    #try:
-        zero_ind = find_zero(realC[0,:])
-        mean_rms, max_rms = compute_rms(realY, zero_ind)
-        mean_drift, max_drift = compute_vm_drift(realY, zero_ind)
-        return [mean_rms, max_rms, mean_drift, max_drift]
-    #except:
-       # print("Failed to run QC on cell")
-        return [np.nan, np.nan, np.nan, np.nan]
-
-
-
-
 
 filter = input("Filter (recommended to be set to 0): ")
 braw = False

@@ -2,6 +2,10 @@
 import os
 import sys
 
+# Single source of truth for the package version (PEP 440).
+# setuptools reads this statically via [tool.setuptools.dynamic] in pyproject.toml.
+__version__ = "1.0.0b1"
+
 # import subprocess
 
 # # install ipfx without deps

@@ -65,13 +65,63 @@ class QcAnalysis(AnalysisBase):
             Keys: ``mean_rms``, ``max_rms``, ``mean_vm_drift``,
             ``max_vm_drift``.
         """
-        # TODO(human): port QC computation from gigaseal/bin/run_QC.py.
-        # Wrap gigaseal.QC.run_qc(realY=y, realC=c) which returns
-        # [mean_rms, max_rms, mean_drift, max_drift]. Apply the optional
-        # ipfx Gaussian `filter` first if self.filter > 0, then map the
-        # returned list onto the documented output keys. Import ipfx/QC
-        # lazily inside this method (never at module top).
-        raise NotImplementedError(
-            "QcAnalysis.analyze() body pending human authoring — "
-            "port from gigaseal/bin/run_QC.py (wraps gigaseal.QC.run_qc)."
-        )
+        #x is not used in the QC analysis, but is included in the signature for consistency with other analyses
+        zero_ind = find_zero_qc(c[0,:])
+        zero_ind = find_baseline(zero_ind)
+        mean_rms, max_rms = compute_rms(y, zero_ind)
+        mean_drift, max_drift = compute_vm_drift(y, zero_ind)
+        return [mean_rms, max_rms, mean_drift, max_drift]
+
+
+def find_zero_qc(realC):
+    #expects 1d array
+    zero_ind = np.where(realC == 0)[0] #in this case we take the first sweep to find the zero current region, as it is assumed that all sweeps have the same zero current region
+    ##Account for time constant?
+    diff = np.diff(zero_ind) #zeros
+    if np.amax(diff) > 1: #in this case we just want the zeros within the seweep
+        diff_jump = np.where(diff>2)[0][0]
+        if diff_jump + 3000 > realC.shape[0]:
+            _hop = diff_jump
+        else:
+            _hop = diff_jump + 3000
+
+        zero_ind_crop = np.hstack((zero_ind[:diff_jump], zero_ind[_hop:]))
+    else: 
+        zero_ind_crop = zero_ind
+    return zero_ind_crop
+
+def find_baseline(zero_ind):
+    #the baseline will be the first continious set of zeros
+    baseline_idx = np.where(np.diff(zero_ind) > 1)[0]
+    if len(baseline_idx) == 0:
+        baseline_idx = len(zero_ind)
+    else:
+        baseline_idx = baseline_idx[0]
+    return zero_ind[0:baseline_idx+1]
+
+def compute_vm_drift(realY, zero_ind):
+    sweep_wise_mean = np.mean(realY[:,zero_ind], axis=1)
+    mean_drift = np.abs(np.amax(sweep_wise_mean) - np.amin(sweep_wise_mean))
+    abs_drift = np.abs(np.amax(realY[:,zero_ind]) - np.amin(realY[:,zero_ind]))
+    return mean_drift, abs_drift
+
+def compute_rms(realY, zero_ind):
+    mean = np.mean(realY[:,zero_ind], axis=1)
+    rms = []
+    for x in np.arange(mean.shape[0]):
+        temp = np.sqrt(np.mean(np.square(realY[x,zero_ind] - mean[x])))
+        rms = np.hstack((rms, temp))
+    full_mean = np.mean(rms)
+    return full_mean, np.amax(rms)
+
+#legacy wrapper for the QC analysis, to be removed once the QC class is fully integrated into the analysis framework
+def run_qc(realY, realC):
+    #spawn a object of the QC class and run the analysis
+    qc = QcAnalysis()
+    return qc.analyze(realY, realC)    
+
+
+
+
+
+

@@ -1,12 +1,12 @@
-#############
-# this script is built to do some additional processing on the output of ipfx
-#  we will be computing some features needed / desired for the inoue lab
-# here we will be wrangling some of the data frames and saving them to csv files
-# we will also be generating some plots and saving them to the same folder
-# This script is a nightmare, it is a mess, but it works, and it is not worth the time to clean it up right now, but it should be cleaned up eventually
-#############
-### as of 1.0 we will be merging this into the main featureExtractor
+""""
+this script is built to do some additional processing on the output of ipfx
+we will be computing some features needed / desired for the inoue lab
+here we will be wrangling some of the data frames and saving them to csv files
+we will also be generating some plots and saving them to the same folder
+ This script is a nightmare, it is a mess, but it works, and it is not worth the time to clean it up right now, but it should be cleaned up eventually
 
+as of 1.0 we will be merging this into the main featureExtractor
+"""
 
 import numpy as np
 import os

@@ -1,3 +1,9 @@
+"""
+_______
+This is now a deprecated file, and will be removed in a future release. Please see analysis module for the new feature extractor. 
+This file is kept for backwards compatibility, but will be removed in a future release.
+"""
+
 import glob
 import os
 import functools
@@ -22,7 +28,7 @@ from .patch_subthres import exp_decay_factor, membrane_resistance, mem_cap, mem_
     rmp_mode, compute_sag, exp_decay_factor_alt, exp_growth_factor, determine_subt, df_select_by_col, subthres_a, exp_rm_factor, ladder_rm, \
     mem_resist_alt
     
-from .QC import run_qc
+from ._legacy.QC import run_qc
 
 #set up the logger
 logger = logging.getLogger(__name__)
@@ -31,6 +37,8 @@ logger.info('Feature extractor loaded')
 
 #this is here, to swap functions in the feature extractor for ones specfic to the INOUE lab IC1 standard protocol
 IC1_SPECIFIC_FUNCTIONS = True
+
+#default parameters for PVN-CRH cells @ 10kHz, should be tuned for other cell types and acquisition rates
 DEFAULT_DICT = {'filter': 0, # lowpass filter frequency in Hz (for the allen inst. filter)
                 'dv_cutoff': 7.0, # min dV/dt to consider a spike (mV/ms)
                 'start': 0.0, # time to start looking for spikes (s)

@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import logging
+from numpy.char import zfill
 import pyabf
 from scipy import interpolate
 from scipy.optimize import curve_fit
@@ -10,70 +11,37 @@ from .dataset import cellData
 
 logger = logging.getLogger(__name__)
 
-
-def load_protocols(path):
-    protocol = []
-    for root,dir,fileList in os.walk(path):
-        for filename in fileList:
-            if filename.endswith(".abf"):
-                try:
-                    file_path = os.path.join(root,filename)
-                    abf = pyabf.ABF(file_path, loadData=False)
-                    protocol = np.hstack((protocol, abf.protocol))
-                except:
-                    print('error processing file ' + file_path)
-    return np.unique(protocol)
-
-
-def plotabf(abf, spiketimes, lowerlim, upperlim, sweep_plots):
-   try:
-    if sweep_plots[0] == -1:
-        pass
-    else:
-        plt.figure(num=2, figsize=(16,6))
-        plt.clf()
-        cm = plt.get_cmap("Set1") #Changes colour based on sweep number
-        if sweep_plots[0] == 0:
-            sweepList = abf.sweepList
-        else:
-            sweepList = sweep_plots - 1
-        colors = [cm(x/np.asarray(sweepList).shape[0]) for x,_ in enumerate(sweepList)]
-        
-        plt.autoscale(True)
-        plt.grid(alpha=0)
-
-        plt.xlabel(abf.sweepLabelX)
-        plt.ylabel(abf.sweepLabelY)
-        plt.title(abf.abfID)
-
-        for c, sweepNumber in enumerate(sweepList):
-            abf.setSweep(sweepNumber)
-            
-            spike_in_sweep = (spiketimes[spiketimes[:,1]==int(sweepNumber+1)])[:,0]
-            i1, i2 = int(abf.dataRate * lowerlim), int(abf.dataRate * upperlim) # plot part of the sweep
-            dataX = abf.sweepX
-            dataY = abf.sweepY
-            colour = colors[c]
-            sweepname = 'Sweep ' + str(sweepNumber)
-            plt.plot(dataX, dataY, color=colour, alpha=1, lw=1, label=sweepname)
-            
-            plt.scatter(dataX[spike_in_sweep[:]], dataY[spike_in_sweep[:]], color=colour, marker='x')
-           
-        
-
-        plt.xlim(abf.sweepX[i1], abf.sweepX[i2])
-        plt.legend()
-        
-        plt.savefig(abf.abfID +'.png', dpi=600)
-        plt.pause(0.05)
-   except:
-        print('plot failed')
-
 def build_running_bin(array, time, start, end, bin=20, time_units='s', kind='nearest'):
+    """ Builds a running bin of the data. The data is binned into bins of size 'bin' and the mean of the data in each bin is calculated. 
+    If there are any NaN values in the binned data, they are replaced with the mean of the data in that bin.
+    If there are no NaN values, the binned data is returned as is.
+    Parameters
+    ----------
+    array : np.ndarray
+        The data to be binned.
+    time : np.ndarray
+        The time values corresponding to the data.
+    start : float
+        The start time of the binning.
+    end : float
+        The end time of the binning.
+    bin : float, optional
+        The size of the bins, by default 20
+    time_units : str, optional
+        The units of the time values, by default 's'
+    kind : str, optional
+        The kind of interpolation to use for filling NaN values, by default 'nearest'
+
+    returns
+    -------
+    binned_ : np.ndarray
+        The binned data.
+    time_bins : np.ndarray
+        The time values corresponding to the binned data.
+    """
     if time_units == 's':
         start = start * 1000
         end = end* 1000
-
         time = time*1000
     time_bins = np.arange(start, end+bin, bin)
     binned_ = np.full(time_bins.shape[0], np.nan, dtype=np.float64)
@@ -155,12 +123,13 @@ def time_to_idx(dataX, time):
     return idx
 
 def idx_to_time(dataX, idx):
-    pass
+    if dataX.nDim > 1:
+        dataX = dataX[0, :]
+    return dataX[idx] #probably?
 
 def find_stim_changes(dataI):
     diff_I = np.diff(dataI)
     infl = np.nonzero(diff_I)[0]
-    
     return infl
 
 def find_downward(dataI):
@@ -175,15 +144,16 @@ def find_non_zero_range(dataT, dataI):
     return (dataT[non_zero_points[0]], dataT[non_zero_points[-1]])
 
 def filter_bessel(data_V, fs, cutoff):
-    """_summary_
-
-    Args:
-        data_V (_type_): _description_
-        abf (_type_): _description_
-        cutoff (_type_): _description_
-
-    Returns:
-        _type_: _description_
+    """ Internal bessel filter function. This function is used to filter the data using a bessel filter.
+      The cutoff frequency is set to 5 kHz by default. If the cutoff frequency is lower than the critical frequency, the data is filtered. Otherwise, the data is returned unfiltered.
+    Parameters
+    ----------
+    data_V : np.ndarray
+        The data to be filtered.
+    fs : float
+        The sampling frequency of the data.
+    cutoff : float
+        The cutoff frequency of the filter.
     """
     #filter the abf with 5 khz lowpass
     #if the cutoff is lower than critical frequency, filter the data
@@ -197,6 +167,21 @@ def filter_bessel(data_V, fs, cutoff):
 def parse_user_input(x=None, y=None, c=None, file=None):
     """ Try to parse the user input and return the parsed values. The user may pass in a single sweep, a list of sweeps, or a range of sweeps. or a file containing the sweeps. 
     The function will return the parsed input as a cellData object.
+    Parameters
+    ----------
+    x : np.ndarray, optional
+        The x values of the sweeps, by default None
+    y : np.ndarray, optional
+        The y values of the sweeps, by default None
+    c : np.ndarray, optional
+        The c values of the sweeps, by default None
+    file : str, optional
+        The file containing the sweeps, by default None
+    
+    Returns
+    -------
+    cellData
+        The parsed input as a cellData object.
     """
     #check if any of the inputs are not None
     for val in [x, y, c, file]:
@@ -232,8 +217,99 @@ def parse_user_input(x=None, y=None, c=None, file=None):
         raise ValueError("No valid input was passed to the function. Please pass in a file or the dataX, dataY, and dataC arrays")
 
 def sweepNumber_to_real_sweep_number(sweepNumber):
-    if sweepNumber < 9:
-            real_sweep_number = '00' + str(sweepNumber + 1)
-    elif sweepNumber > 8 and sweepNumber < 99:
-            real_sweep_number = '0' + str(sweepNumber + 1)
-    return real_sweep_number
+    """Convert a sweep number to a real sweep number. Internally the sweep number is zero indexed, but the real sweep number is one indexed. 
+    This function converts the zero indexed sweep number to a one indexed sweep number. For users used to Clampex conventions
+    The real sweep number is the sweep number + 1, and is zero padded to 3 digits.
+    For example, sweep number 0 will be converted to 001, sweep number 1 will be converted to 002, etc.
+    Parameters
+    ----------
+    sweepNumber : int
+        The zero indexed sweep number.
+    Returns
+    -------
+    str
+        The one indexed sweep number, zero padded to 3 digits.
+    """
+    return zfill(str(sweepNumber + 1), 3)
+
+####
+# Some legacy functions that should be removed or replaced with the above functions. These are here for legacy reasons and should not be used in new code.
+
+
+def plotabf(abf, spiketimes, lowerlim, upperlim, sweep_plots):
+   """
+   Very legacy function to plot sweeps from an abf file. 
+   This function is used to plot the sweeps from an abf file. 
+   The user can specify which sweeps to plot, and the time range to plot. The function will save the plot as a png file in the current working directory.
+   Probably should not be used by anyone, but is here for legacy reasons.
+   Parameters
+    ----------
+    abf : pyabf.ABF
+          The abf file to plot.
+   
+   """
+   try:
+    if sweep_plots[0] == -1:
+        pass
+    else:
+        plt.figure(num=2, figsize=(16,6))
+        plt.clf()
+        cm = plt.get_cmap("Set1") #Changes colour based on sweep number
+        if sweep_plots[0] == 0:
+            sweepList = abf.sweepList
+        else:
+            sweepList = sweep_plots - 1
+        colors = [cm(x/np.asarray(sweepList).shape[0]) for x,_ in enumerate(sweepList)]
+        
+        plt.autoscale(True)
+        plt.grid(alpha=0)
+
+        plt.xlabel(abf.sweepLabelX)
+        plt.ylabel(abf.sweepLabelY)
+        plt.title(abf.abfID)
+
+        for c, sweepNumber in enumerate(sweepList):
+            abf.setSweep(sweepNumber)
+            
+            spike_in_sweep = (spiketimes[spiketimes[:,1]==int(sweepNumber+1)])[:,0]
+            i1, i2 = int(abf.dataRate * lowerlim), int(abf.dataRate * upperlim) # plot part of the sweep
+            dataX = abf.sweepX
+            dataY = abf.sweepY
+            colour = colors[c]
+            sweepname = 'Sweep ' + str(sweepNumber)
+            plt.plot(dataX, dataY, color=colour, alpha=1, lw=1, label=sweepname)
+            
+            plt.scatter(dataX[spike_in_sweep[:]], dataY[spike_in_sweep[:]], color=colour, marker='x')
+           
+        
+
+        plt.xlim(abf.sweepX[i1], abf.sweepX[i2])
+        plt.legend()
+        
+        plt.savefig(abf.abfID +'.png', dpi=600)
+        plt.pause(0.05)
+   except:
+        print('plot failed')
+
+def load_protocols(path):
+    """Load all protocols from abf files in a given directory.
+    Parameters
+    ----------
+    path : str
+        The path to the directory containing the abf files.
+    Returns
+    -------
+        np.ndarray
+            Array of unique protocols found in the directory.
+    """
+    protocol = []
+    for root,dir,fileList in os.walk(path):
+        for filename in fileList:
+            if filename.endswith(".abf"):
+                try:
+                    file_path = os.path.join(root,filename)
+                    abf = pyabf.ABF(file_path, loadData=False)
+                    protocol = np.hstack((protocol, abf.protocol))
+                except:
+                    print('error processing file ' + file_path)
+    return np.unique(protocol)

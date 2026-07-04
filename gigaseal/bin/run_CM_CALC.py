@@ -14,7 +14,7 @@ from ipfx import subthresh_features as subt
 import pyabf
 import logging
 from gigaseal.patch_subthres import *
-from gigaseal.QC import *
+from gigaseal._legacy.QC import *
 from gigaseal.featureExtractor import _merge_current_injection_features
 print("Load finished")
 def main():

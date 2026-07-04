@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gigaseal"
-version = "0.9.1"
+dynamic = ["version"]
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.21.0",
@@ -21,6 +21,9 @@ dependencies = [
 where = ["."]  # list of folders that contain the packages (["."] by default)
 include = ["*"]  # package names should match these glob patterns (["*"] by default)
 exclude = ["tests"]  # exclude packages matching these glob patterns (empty by default)
+
+[tool.setuptools.dynamic]
+version = { attr = "gigaseal.__version__" }
 
 [project.scripts]
 gigaseal = "gigaseal.cli:main"
