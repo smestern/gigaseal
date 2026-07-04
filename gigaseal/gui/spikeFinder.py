@@ -1126,7 +1126,7 @@ class PandasModel(QAbstractTableModel):
 
         if role == Qt.DisplayRole:
             return str(self._dataframe.iloc[index.row(), index.column()])
-        elif role == Qt.BackgroundColorRole and 'outlier' in self._dataframe.columns:
+        elif role == Qt.ItemDataRole.BackgroundColorRole and 'outlier' in self._dataframe.columns:
             if self._dataframe.iloc[index.row()]['outlier'] == -1:
                 return QtGui.QColor(255, 0, 0)
         return None

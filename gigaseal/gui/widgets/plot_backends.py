@@ -118,7 +118,11 @@ class MatplotlibBackend(PlotBackend):
         size = kwargs.get("size", 30)
         label = kwargs.get("label", "Spikes")
         self._ax_v.scatter(times, voltages, c=color, marker=marker,
-                           s=size, zorder=5, label=label)
+                           s=size, zorder=5)
+        #check if label already exists in legend
+        handles, labels = self._ax_v.get_legend_handles_labels()
+        if label not in labels:
+            self._ax_v.scatter([], [], c=color, marker=marker, s=size, label=label)  # for legend
 
     def mark_rejected(self, times, voltages, **kwargs):
         color = kwargs.get("color", "#d62728")
@@ -126,7 +130,11 @@ class MatplotlibBackend(PlotBackend):
         size = kwargs.get("size", 30)
         label = kwargs.get("label", "Rejected")
         self._ax_v.scatter(times, voltages, c=color, marker=marker,
-                           s=size, zorder=5, label=label)
+                           s=size, zorder=5)
+        #check if label already exists in legend
+        handles, labels = self._ax_v.get_legend_handles_labels()
+        if label not in labels:
+            self._ax_v.scatter([], [], c=color, marker=marker, s=size, label=label)  # for legend
 
     def add_hline(self, y, color="#FF0000", linestyle="--", axis="dvdt"):
         ax = self._ax_dv if axis == "dvdt" else self._ax_v

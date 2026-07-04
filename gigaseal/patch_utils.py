@@ -93,6 +93,43 @@ def build_running_bin(array, time, start, end, bin=20, time_units='s', kind='nea
             binned_[nans] = np.nanmean(array)
     return binned_, time_bins
 
+def crop_spikes(dataT, dataV, dataI, dv_cutoff=20.0, thresh_frac=0.2, pad=500):
+    """Mask out action potentials from a voltage trace.
+
+    Shared replacement for the duplicated ``crop_ap`` helpers in the legacy
+    ``run_rmp.py`` / ``run_QC.py`` scripts. Detects spikes with the ipfx
+    feature extractor and returns a copy of ``dataV`` with the samples
+    spanning each spike (threshold − ``pad`` to trough + ``pad``) set to
+    ``np.nan`` so downstream ``np.nan*`` statistics ignore them.
+
+    Parameters
+    ----------
+    dataT, dataV, dataI : np.ndarray
+        1-D time, voltage, and current arrays for a single sweep.
+    dv_cutoff : float
+        Minimum dV/dt (mV/ms) for ipfx spike detection.
+    thresh_frac : float
+        Fraction of spike height used for the threshold.
+    pad : int
+        Number of samples to crop before threshold and after trough.
+
+    Returns
+    -------
+    np.ndarray
+        Copy of ``dataV`` with spike regions replaced by ``np.nan``. If no
+        spikes are detected the array is returned unmodified.
+    """
+    # TODO(human): port spike-cropping logic from the legacy crop_ap()
+    # functions in gigaseal/bin/run_rmp.py and run_QC.py. Use
+    # ipfx.feature_extractor.SpikeFeatureExtractor (import lazily), guard the
+    # empty-spike case, clamp indices to the trace length, and replace the
+    # deprecated ``np.int`` casts with ``int`` / ``np.int64``.
+    raise NotImplementedError(
+        "crop_spikes() body pending human authoring — consolidate the "
+        "crop_ap() helpers from run_rmp.py and run_QC.py."
+    )
+
+
 def create_dir(fp):
     if os.path.exists(fp):
         pass

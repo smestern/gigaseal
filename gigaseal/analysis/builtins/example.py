@@ -37,6 +37,7 @@ class PeakDetector(AnalysisBase):
     name = "peak_detector"
     display_name = "Peak Detector (Example)"
     sweep_mode = "per_sweep"
+    hidden = True  # demo/dummy module — kept out of the end-user GUI
 
     # Parameters — just typed class attributes with defaults
     min_voltage: float = -20.0

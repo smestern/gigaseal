@@ -223,6 +223,7 @@ class PlotPanel(QWidget):
                     volts = [volts]
                 if times:
                     bk.mark_spikes(times, volts)
+            
         except Exception:
             pass
 

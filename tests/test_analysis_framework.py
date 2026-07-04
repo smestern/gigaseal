@@ -414,5 +414,80 @@ class TestLegacyImports:
         from gigaseal.dataset import cellData
         assert callable(cellData)
 
+
+# ======================================================================
+# Migrated bin/ analysis modules (scaffolded — analyze() bodies pending)
+# ======================================================================
+
+class TestMigratedModules:
+    """Registration/parameter checks for the modules migrated from bin/.
+
+    The ``analyze()`` bodies are intentionally left as ``NotImplementedError``
+    stubs for human authoring; the ``*_analyze_pending`` tests document that
+    state and should be replaced with real assertions once each body is
+    ported.
+    """
+
+    def test_qc_registered(self):
+        from gigaseal.analysis import get
+        assert get("qc") is not None
+
+    def test_rmp_registered(self):
+        from gigaseal.analysis import get
+        assert get("rmp") is not None
+
+    def test_membrane_fit_registered(self):
+        from gigaseal.analysis import get
+        assert get("membrane_fit") is not None
+
+    def test_growth_factor_registered(self):
+        from gigaseal.analysis import get
+        assert get("growth_factor") is not None
+
+    def test_growth_factor_hidden(self):
+        from gigaseal.analysis.builtins.growth_factor import GrowthFactorAnalysis
+        assert GrowthFactorAnalysis.hidden is True
+
+    def test_qc_parameters(self):
+        from gigaseal.analysis.builtins.qc import QcAnalysis
+        assert set(QcAnalysis().get_parameters()) == {"filter"}
+
+    def test_rmp_parameters(self):
+        from gigaseal.analysis.builtins.rmp import RmpAnalysis
+        assert set(RmpAnalysis().get_parameters()) == {
+            "window", "bin_time", "crop_spikes", "filter",
+        }
+
+    def test_membrane_fit_parameters(self):
+        from gigaseal.analysis.builtins.membrane_fit import MembraneAnalysis
+        assert set(MembraneAnalysis().get_parameters()) == {
+            "filter", "savgol_filter", "time_after",
+            "start_search", "end_search", "subthreshold_sweeps",
+        }
+
+    def test_membrane_fit_is_per_file(self):
+        from gigaseal.analysis.builtins.membrane_fit import MembraneAnalysis
+        assert MembraneAnalysis.sweep_mode == "per_file"
+
+    @pytest.mark.parametrize("module_name", ["qc", "rmp", "membrane_fit", "growth_factor"])
+    def test_analyze_pending(self, module_name):
+        """Bodies are stubs until human-authored — assert the TODO state."""
+        from gigaseal.analysis import get
+        module = get(module_name)  # registry stores instances
+        with pytest.raises(NotImplementedError):
+            if module.sweep_mode == "per_sweep":
+                x, y, c = _make_fake_sweep()
+            else:
+                x, y, c = _make_fake_data_2d()
+            module.analyze(x, y, c)
+
+    def test_crop_spikes_pending(self):
+        """Shared crop helper is a stub until human-authored."""
+        from gigaseal.patch_utils import crop_spikes
+        x, y, c = _make_fake_sweep(spike=True)
+        with pytest.raises(NotImplementedError):
+            crop_spikes(x, y, c)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

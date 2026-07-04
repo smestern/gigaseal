@@ -61,16 +61,16 @@ def test_param_form_covers_all_visible_module_types():
     )
 
 
-def test_legacy_spike_is_hidden_from_panel(qapp):
-    """LegacySpikeAnalysis must not appear in the AnalysisPanel combo."""
+def test_legacy_spike_is_visible_in_panel(qapp):
+    """LegacySpikeAnalysis is a real analysis and must appear in the AnalysisPanel combo."""
     from gigaseal.gui.panels.analysis_panel import AnalysisPanel
     panel = AnalysisPanel()
     try:
         items = [panel._combo_module.itemText(i)
                  for i in range(panel._combo_module.count())]
-        assert "Legacy Spike Analysis" not in items
-        # at least one visible module should be present
-        assert items, "AnalysisPanel combo is empty"
+        assert "Legacy Spike Analysis" in items
+        # the demo/dummy PeakDetector must stay hidden from end users
+        assert "Peak Detector (Example)" not in items
     finally:
         panel.deleteLater()
 

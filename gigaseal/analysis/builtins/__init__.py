@@ -10,11 +10,21 @@ from ..registry import register
 from .spike import SpikeAnalysis, LegacySpikeAnalysis
 from .subthreshold import SubthresholdAnalysis
 from .example import PeakDetector
+from .qc import QcAnalysis
+from .rmp import RmpAnalysis
+from .membrane_fit import MembraneAnalysis
+from .growth_factor import GrowthFactorAnalysis
 
 # Register all built-in modules
 register(SpikeAnalysis)
 register(SubthresholdAnalysis)
 register(LegacySpikeAnalysis)
+register(QcAnalysis)
+register(RmpAnalysis)
+register(MembraneAnalysis)
+register(GrowthFactorAnalysis)
 
-#you could register example here as well, but we don't want it to show up in the GUI by default since it's just a demo
-#register(PeakDetector)
+# PeakDetector is a demo/dummy module. It is registered so the test suite and
+# programmatic users can reach it by name, but it sets ``hidden = True`` so it
+# never shows up in the end-user GUI.
+register(PeakDetector)
