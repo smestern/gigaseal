@@ -12,6 +12,7 @@
 *.abf
 *.csv
 !data/*.abf
+!tests/test_data/*.csv
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
