@@ -1,3 +1,4 @@
+## This script is for general programmatic tools. Patch-specific tools should go in patch_utils.py, and analysis-specific tools should go in the analysis module.
 import numpy as np
 import pandas as pd
 import sys

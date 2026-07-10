@@ -204,7 +204,7 @@ def _build_sweepwise_dataframe(real_sweep_number, spike_in_sweep, spike_train, t
         print("Processed Sweep " + str(real_sweep_number) + " with " + str(spike_count) + " aps")
         df = pd.concat([df, spike_in_sweep], ignore_index=True, sort=True)
     else:
-        sweep_running_bin = pd.DataFrame(data=nan_row_run, columns=_run_labels, index=[real_sweep_number])
+        sweep_running_bin = pd.DataFrame(data=nan_row_run, columns=_run_labels, index=[str(real_sweep_number)])
         print("Processed Sweep " + str(real_sweep_number) + " with " + str(spike_count) + " aps")
         #fill in np nans for the features that cant be calculated when there are no spikes
         #first the spike train generated features

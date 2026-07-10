@@ -230,7 +230,7 @@ def sweepNumber_to_real_sweep_number(sweepNumber):
     str
         The one indexed sweep number, zero padded to 3 digits.
     """
-    return zfill(str(sweepNumber + 1), 3)
+    return str(zfill(str(sweepNumber + 1), 3))
 
 ####
 # Some legacy functions that should be removed or replaced with the above functions. These are here for legacy reasons and should not be used in new code.

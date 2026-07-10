@@ -469,7 +469,7 @@ class TestMigratedModules:
         from gigaseal.analysis.builtins.membrane_fit import MembraneAnalysis
         assert MembraneAnalysis.sweep_mode == "per_file"
 
-    @pytest.mark.parametrize("module_name", ["qc", "rmp", "membrane_fit", "growth_factor"])
+    @pytest.mark.parametrize("module_name", ["rmp", "membrane_fit", "growth_factor"])
     def test_analyze_pending(self, module_name):
         """Bodies are stubs until human-authored — assert the TODO state."""
         from gigaseal.analysis import get
@@ -487,6 +487,22 @@ class TestMigratedModules:
         x, y, c = _make_fake_sweep(spike=True)
         with pytest.raises(NotImplementedError):
             crop_spikes(x, y, c)
+
+    def test_qc_analyze_synthetic(self):
+        """QcAnalysis is implemented — returns a flat dict of metrics."""
+        from gigaseal.analysis.builtins.qc import QcAnalysis
+        x, y, c = _make_fake_data_2d()
+        out = QcAnalysis().analyze(x, y, c)
+        assert isinstance(out, dict)
+        assert set(out) == {"mean_rms", "max_rms", "mean_vm_drift", "max_vm_drift"}
+
+    def test_run_qc_wrapper_contract(self):
+        """Legacy run_qc wrapper returns the 4-item list featureExtractor expects."""
+        from gigaseal.analysis.builtins.qc import run_qc
+        _, y, c = _make_fake_data_2d()
+        result = run_qc(y, c)
+        assert len(result) == 4
+        mean_rms, max_rms, mean_drift, max_drift = result  # unpackable
 
 
 if __name__ == "__main__":

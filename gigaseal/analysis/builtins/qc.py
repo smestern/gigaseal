@@ -70,7 +70,12 @@ class QcAnalysis(AnalysisBase):
         zero_ind = find_baseline(zero_ind)
         mean_rms, max_rms = compute_rms(y, zero_ind)
         mean_drift, max_drift = compute_vm_drift(y, zero_ind)
-        return [mean_rms, max_rms, mean_drift, max_drift]
+        return {
+            "mean_rms": mean_rms,
+            "max_rms": max_rms,
+            "mean_vm_drift": mean_drift,
+            "max_vm_drift": max_drift,
+        }
 
 
 def find_zero_qc(realC):
@@ -114,11 +119,19 @@ def compute_rms(realY, zero_ind):
     full_mean = np.mean(rms)
     return full_mean, np.amax(rms)
 
-#legacy wrapper for the QC analysis, to be removed once the QC class is fully integrated into the analysis framework
+#legacy wrapper for the QC analysis, to be removed once the QC class is fully integrated into the analysis framework.
+#Returns the 4-item list [mean_rms, max_rms, mean_vm_drift, max_vm_drift] expected by the frozen featureExtractor call sites.
 def run_qc(realY, realC):
     #spawn a object of the QC class and run the analysis
+    #analyze(x, y, c): y=response (realY), c=command (realC); x is unused for QC
     qc = QcAnalysis()
-    return qc.analyze(realY, realC)    
+    result = qc.analyze(None, realY, realC)
+    return [
+        result["mean_rms"],
+        result["max_rms"],
+        result["mean_vm_drift"],
+        result["max_vm_drift"],
+    ]
 
 
 

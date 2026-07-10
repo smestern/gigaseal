@@ -2,6 +2,8 @@
 
 A Python package for batch electrophysiology feature extraction, analysis, and visualization of ABF files. Built for the Inoue Lab @ Western University.
 
+> **`gigaseal` is the continuation of [`pyAPisolation`](https://github.com/smestern/pyAPisolation).** The original `pyAPisolation` code is frozen for reproducibility of its associated publication — see [History & Citation](#history--citation).
+
 ![](PVN_CLAMP.PNG)
 
 > **Authoring policy (soft target).** Core analysis code: spike detection, subthreshold fits, IPFX integration, lab-specific protocol logic, is written by a human. AI assistants are used for frameworking, generalization, plumbing, tests, and cleanup. See [COPILOT_PRIORITIES.md](COPILOT_PRIORITIES.md) for the current backlog and division of labor.
@@ -108,6 +110,15 @@ gigaseal/
 - GUI: PySide6, pyqtgraph, prismWriter, seaborn
 - Web: Flask, beautifulsoup4, pyyaml, anndata
 - ML: scikit-learn, umap-learn, joblib
+
+## History & Citation
+
+`gigaseal` was formerly developed under the name **`pyAPisolation`**. That original project is preserved, unchanged, at [smestern/pyAPisolation](https://github.com/smestern/pyAPisolation) to guarantee reproducibility of the results in its associated publication.
+
+- **Replicating the paper?** Use the frozen `pyAPisolation` repository (tag `v1.0-paper`), not this one.
+- **New analyses / active development?** Use `gigaseal` (this repository).
+
+If you use this software, please cite the associated publication _(citation and DOI to follow)_.
 
 ## License
 
