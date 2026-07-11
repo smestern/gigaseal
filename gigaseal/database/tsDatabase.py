@@ -1085,3 +1085,89 @@ class tsDatabase:
 
     def getCells(self):
         return self.cellindex.to_dict(orient="index")
+
+    def from_dataframe(self, df: pd.DataFrame, *,
+                       cell_id_col: Optional[str] = None,
+                       filename_cols: Optional[List[str]] = None,
+                       metadata_cols: Optional[List[str]] = None) -> bool:
+        """Populate the database from an existing DataFrame.
+
+        Parameters
+        ----------
+        df:
+            Source DataFrame.  A copy is made internally so the caller's
+            object is not modified.
+        cell_id_col:
+            Column name to use as the cell-id index.  When omitted the
+            first column whose lower-cased name is in
+            ``{"cell_id", "cell", "unique_id", "cell_num"}`` is used;
+            if none matches the existing index is kept as-is.
+        filename_cols:
+            Explicit list of columns that hold recording-file identifiers
+            (protocol columns).  Any column not listed here and not in
+            *metadata_cols* is auto-classified.
+        metadata_cols:
+            Explicit list of columns to treat as cell-level metadata.
+
+        Returns
+        -------
+        bool
+            ``True`` on success, ``False`` when *df* is empty or ``None``.
+        """
+        if df is None or df.empty:
+            return False
+
+        df = df.copy()
+
+        # -- resolve cell-id column --
+        _cell_id_candidates = {"cell_id", "cell", "unique_id", "cell_num"}
+        if cell_id_col is None:
+            for col in df.columns:
+                if col.lower() in _cell_id_candidates:
+                    cell_id_col = col
+                    break
+        if cell_id_col and cell_id_col in df.columns:
+            df = df.set_index(cell_id_col)
+        # drop empty-index rows
+        df = df[df.index.notna()]
+        df = df[~df.index.astype(str).str.strip().isin({"", "_", "nan", "None"})]
+        df.index.name = "cell"
+
+        # -- classify columns --
+        self.exp = experimentalStructure()
+        meta_lookup = {m.lower() for m in DEFAULT_METADATA_COLS} | set(_EXTENDED_METADATA_NAMES)
+        explicit_meta = set(metadata_cols or [])
+        explicit_proto = set(filename_cols or [])
+
+        for col in df.columns:
+            base = self.protocol_base_name(col)
+            cond = self.protocol_condition(col)
+
+            if col in explicit_meta:
+                self.exp.mark_metadata(col)
+                continue
+            if col in explicit_proto:
+                self.exp.add_protocol(base, conditions=[cond] if cond else None)
+                continue
+
+            name_low = col.lower()
+            base_low = base.lower()
+            if name_low in meta_lookup or base_low in meta_lookup:
+                self.exp.mark_metadata(col)
+                continue
+
+            # auto-classify by value type
+            value_kind = _classify_column_values(df[col])
+            if value_kind == "file_id":
+                self.exp.add_protocol(base, conditions=[cond] if cond else None)
+            else:
+                self.exp.mark_metadata(col)
+
+        self.cellindex = df
+        # Aggregate duplicate cell-id rows by keeping the first non-null value
+        # per column.  A cell-level database must have a unique index.
+        if self.cellindex.index.duplicated().any():
+            self.cellindex = self.cellindex.groupby(level=0, sort=False).first()
+            self.cellindex.index.name = "cell"
+        logger.info("Database loaded from DataFrame (%d rows)", len(self.cellindex))
+        return True
