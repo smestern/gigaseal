@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from gigaseal.dataset import cellData
 from gigaseal.database import tsDatabase
 import os
@@ -53,7 +54,7 @@ def test_database():
     db = tsDatabase()
     result = db.from_dataframe(df, cell_id_col='filename')
     assert result, "from_dataframe should return True on success"
-    assert isinstance(db.cellindex, df.__class__)
+    assert isinstance(db.cellindex, pd.DataFrame)
 
     print(db.cellindex.head())
 
