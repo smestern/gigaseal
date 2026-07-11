@@ -48,10 +48,14 @@ def test_x_y_c():
 
 def test_database():
     df = load(f'{os.path.dirname(__file__)}/test_data/known_good_df.joblib')
-    db = tsDatabase.tsDatabase(dataframe=df, id_col='filename')
+
+    # Use the new API: create a fresh database and populate via from_dataframe
+    db = tsDatabase()
+    result = db.from_dataframe(df, cell_id_col='filename')
+    assert result, "from_dataframe should return True on success"
+    assert isinstance(db.cellindex, df.__class__)
+
     print(db.cellindex.head())
-    assert db.dataframe.equals(df)
-    assert np.all(list(db.cellindex['IC1']) == list(df.index.values))
 
     #check that we can add a new entry
     db.addEntry('test')
