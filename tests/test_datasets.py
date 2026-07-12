@@ -1,8 +1,5 @@
 import numpy as np
 from gigaseal.dataset import cellData
-from gigaseal.database import tsDatabase
-import os
-from joblib import load
 def test_x_y_c():
     #generate some fake data
     x = np.random.rand(10, 1000)
@@ -46,26 +43,5 @@ def test_x_y_c():
     print('All tests passed')
 
 
-def test_database():
-    df = load(f'{os.path.dirname(__file__)}/test_data/known_good_df.joblib')
-    db = tsDatabase.tsDatabase(dataframe=df, id_col='filename')
-    print(db.cellindex.head())
-    assert db.dataframe.equals(df)
-    assert np.all(list(db.cellindex['IC1']) == list(df.index.values))
-
-    #check that we can add a new entry
-    db.addEntry('test')
-    assert 'test' in db.cellindex.index.values
-
-    #try adding a protocol
-    db.addProtocol('test', 'protocol', path='test_path')
-    assert db.cellindex.loc['test', 'protocol'] =='test_path'
-
-
-
-    
-
 if __name__ == "__main__":
-    test_database()
     test_x_y_c()
-    

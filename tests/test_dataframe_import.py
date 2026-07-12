@@ -6,6 +6,7 @@ Test script for testing the from_dataframe method with demo data
 import sys
 import os
 import pandas as pd
+import pytest
 import logging
 logging.basicConfig(level=logging.INFO)
 
@@ -21,8 +22,7 @@ def test_demo_dataframe_import():
     demo_path = os.path.join(os.path.dirname(__file__), 'test_data', 'demo_arb_data.csv')
     
     if not os.path.exists(demo_path):
-        print(f"Demo data file not found: {demo_path}")
-        return False
+        pytest.skip(f"Demo data file not found: {demo_path}")
         
     df = pd.read_csv(demo_path, skiprows=2)
     print(f"Loaded demo data with shape: {df.shape}")
@@ -39,21 +39,22 @@ def test_demo_dataframe_import():
     )
     
     if result:
-        print("✅ Successfully imported demo data with auto-detection")
+        print("\u2705 Successfully imported demo data with auto-detection")
         print(f"Database contains {len(db.cellindex)} cells")
         print(f"Protocol columns: {len(db.cellindex.columns)} total columns")
-        
+
         # Show some sample data
         print("\nSample cells:")
         for i, (cell_name, cell_data) in enumerate(db.getCells().items()):
             if i >= 3:  # Show first 3 cells
                 break
             print(f"  {cell_name}: {len([v for v in cell_data.values() if v is not None and v != ''])} protocols")
-        
-        return True
-    else:
-        print("❌ Failed to import demo data")
-        return False
+
+    assert result, "from_dataframe returned False on auto-detection"
+    assert len(db.cellindex) > 0
+    # IC1 is a known protocol column in the demo data
+    assert "IC1" in db.cellindex.columns
+    assert "IC1" in db.get_protocol_columns()
 
 def test_specific_protocols():
     """Test with manually specified protocol columns"""
@@ -75,9 +76,9 @@ def test_specific_protocols():
     )
     
     if result:
-        print("✅ Successfully imported demo data with specific protocols")
+        print("\u2705 Successfully imported demo data with specific protocols")
         print(f"Database contains {len(db.cellindex)} cells")
-        
+
         # Check that our specific protocols are there
         for protocol in specific_protocols:
             if protocol in db.cellindex.columns:
@@ -85,18 +86,17 @@ def test_specific_protocols():
                 print(f"  {protocol}: {non_empty} cells have this protocol")
             else:
                 print(f"  {protocol}: NOT FOUND in database")
-        
-        return True
-    else:
-        print("❌ Failed to import demo data with specific protocols")
-        return False
+
+    assert result, "from_dataframe returned False with specific protocols"
+    for protocol in specific_protocols:
+        assert protocol in db.cellindex.columns, f"{protocol} missing"
+        assert protocol in db.get_protocol_columns()
 
 def test_indiv_rows():
     """Test that individual rows are correctly imported into the database"""
     demo_path = os.path.join(os.path.dirname(__file__), 'test_data', 'demo_arb_data.csv')
     if not os.path.exists(demo_path):
-        print(f"Demo data file not found: {demo_path}")
-        return False
+        pytest.skip(f"Demo data file not found: {demo_path}")
     df = pd.read_csv(demo_path, skiprows=2)
     db = tsDatabase()
     result = db.from_dataframe(
@@ -104,20 +104,14 @@ def test_indiv_rows():
         cell_id_col='CELL_ID',
         metadata_cols=['DATE', 'drug', 'NOTE', 'Burst Adex', 'Burst Cadex']
     )
-    if not result:
-        print("❌ Failed to import demo data in test_indiv_rows")
-        return False
+    assert result, "from_dataframe returned False in test_indiv_rows"
     # Check a few individual rows
     sample_rows = df.head(3)
-    all_passed = True
     for idx, row in sample_rows.iterrows():
         cell_id = row['CELL_ID']
-        if cell_id not in db.cellindex.index:
-            print(f"❌ Cell ID {cell_id} not found in database index")
-            all_passed = False
-        else:
-            print(f"✅ Cell ID {cell_id} found in database index")
-    return all_passed
+        assert cell_id in db.cellindex.index, (
+            f"Cell ID {cell_id} not found in database index"
+        )
 if __name__ == "__main__":
     print("Testing tsDatabase.from_dataframe() with demo data...")
     print("=" * 60)

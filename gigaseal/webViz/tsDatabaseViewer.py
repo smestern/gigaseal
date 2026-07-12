@@ -98,7 +98,9 @@ class tsDatabaseViewer:
 
 
         #check for raw data. If the raw data is not present, search for it in the folder path
-        globbed_files = np.array([glob.glob(os.path.join(x, '*'+self.config.ext)) for x in self.database[self.config.folder_path].unique()])
+        # NOTE: keep this a plain list of lists; np.array() on ragged glob results
+        # raises on NumPy 2.x ("inhomogeneous shape").
+        globbed_files = [glob.glob(os.path.join(x, '*'+self.config.ext)) for x in self.database[self.config.folder_path].unique()]
 
         logger.info("Searching for raw data")
         for idx, row in self.database.iterrows():

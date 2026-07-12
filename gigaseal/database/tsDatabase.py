@@ -344,6 +344,13 @@ def _pick_index_column(
         return chosen, "per_cell"
 
     # row_mode == "auto"
+    # An explicitly supplied cell_id_col wins over the unique-id auto-switch:
+    # the caller told us which column identifies the row. Duplicates in it
+    # simply mean per-recording semantics on that same index.
+    if cell_id_col and cell_id_col in df.columns:
+        if df[chosen].duplicated().any():
+            return chosen, "per_recording"
+        return chosen, "per_cell"
     for candidate in _UNIQUE_ID_CANDIDATES:
         if candidate in cols_lower:
             return cols_lower[candidate], "per_recording"
@@ -617,12 +624,18 @@ class tsDatabase:
     # Construction
     # ------------------------------------------------------------------
 
+    #: Link columns of the feature store (everything else is a feature).
+    FEATURE_LINK_COLS = ["cell", "protocol", "condition", "source_file"]
+
     def __init__(self, path: Optional[str] = None,
                  exp: Optional[experimentalStructure] = None):
         self.path: str = path or os.getcwd()
         self.exp: experimentalStructure = exp or experimentalStructure()
         self.cellindex: pd.DataFrame = pd.DataFrame()
         self.cellindex.index.name = "cell"
+        # Dedicated per-recording feature store (kept out of cellindex so the
+        # hand-editable cell sheet stays lean even with many features).
+        self.features: pd.DataFrame = pd.DataFrame(columns=self.FEATURE_LINK_COLS)
         self._save_path: Optional[str] = None  # last-used save location
 
     # ------------------------------------------------------------------
@@ -780,17 +793,32 @@ class tsDatabase:
     # Save / Load - Excel (.xlsx)
     # ------------------------------------------------------------------
 
-    def save_xlsx(self, path: str) -> str:
+    def save_xlsx(self, path: str, *,
+                  feature_export: Literal["none", "sheet", "merged"] = "sheet") -> str:
         """Save to a multi-sheet Excel workbook.
 
-        Sheets: *CellIndex*, *Protocols*, *_config*, *_metadata_cols*.
+        Sheets: *CellIndex*, *Protocols*, *_config*, *_metadata_cols*, and
+        (when features exist and ``feature_export="sheet"``) *Features*.
+
+        ``feature_export`` controls how computed features surface:
+
+        * ``"sheet"`` (default) - write the raw feature store to a
+          dedicated *Features* worksheet; *CellIndex* stays lean.
+        * ``"merged"`` - left-join per-cell features into the *CellIndex*
+          sheet (wide table); no separate *Features* sheet.
+        * ``"none"`` - omit features entirely.
         """
         if not path.endswith(".xlsx"):
             path += ".xlsx"
 
+        has_features = not self.features.empty
         with pd.ExcelWriter(path, engine="openpyxl") as writer:
-            # main table
-            self.cellindex.to_excel(writer, sheet_name="CellIndex", index=True)
+            # main table (optionally merged with per-cell features)
+            if feature_export == "merged" and has_features:
+                main = self.get_features(merge=True)
+            else:
+                main = self.cellindex
+            main.to_excel(writer, sheet_name="CellIndex", index=True)
 
             # protocol registry
             self.exp.to_dataframe().to_excel(writer, sheet_name="Protocols", index=False)
@@ -805,6 +833,10 @@ class tsDatabase:
             pd.DataFrame({
                 "column": sorted(self.exp._metadata_cols),
             }).to_excel(writer, sheet_name="_metadata_cols", index=False)
+
+            # raw feature store
+            if feature_export == "sheet" and has_features:
+                self.features.to_excel(writer, sheet_name="Features", index=False)
 
         self._save_path = path
         logger.info("Database saved to %s", path)
@@ -839,6 +871,11 @@ class tsDatabase:
         except Exception:
             pass
 
+        try:
+            self.features = pd.read_excel(path, sheet_name="Features")
+        except Exception:
+            self.clear_features()
+
         self._save_path = path
         logger.info("Database loaded from %s (%d cells)", path, len(self.cellindex))
 
@@ -847,7 +884,8 @@ class tsDatabase:
     # ------------------------------------------------------------------
 
     def save_csv(self, path: str, *, grouped: bool = False,
-                 drug_col: str = "drug") -> str:
+                 drug_col: str = "drug",
+                 feature_export: Literal["none", "separate", "merged"] = "separate") -> str:
         """Save ``cellindex`` as a CSV.
 
         With ``grouped=False`` (default) emit a flat single-row header.
@@ -856,12 +894,34 @@ class tsDatabase:
         and row 1 holds the column names. Conditioned columns of the
         form ``base - control`` / ``base - drug`` are reduced back to
         ``base`` on row 1 so the spreadsheet matches the lab convention.
+
+        ``feature_export`` controls how computed features surface:
+
+        * ``"separate"`` (default) - write the raw feature store to a
+          sidecar ``<name>_features.csv`` (keeps the cell sheet clean).
+        * ``"merged"`` - left-join per-cell features into the flat CSV
+          (only honoured when ``grouped=False``; falls back to a sidecar
+          for grouped output).
+        * ``"none"`` - omit features entirely.
         """
         if not path.endswith(".csv"):
             path += ".csv"
 
+        has_features = not self.features.empty
+
+        def _write_feature_sidecar() -> None:
+            if has_features and feature_export == "separate":
+                side = path[:-4] + "_features.csv"
+                self.features.to_csv(side, index=False)
+                logger.info("Features exported to %s", side)
+
         if not grouped:
-            self.cellindex.to_csv(path, index=True)
+            if feature_export == "merged" and has_features:
+                main = self.get_features(merge=True)
+            else:
+                main = self.cellindex
+            main.to_csv(path, index=True)
+            _write_feature_sidecar()
             logger.info("Database exported to %s", path)
             return path
 
@@ -904,6 +964,7 @@ class tsDatabase:
                         "" if pd.isna(v) else v for v in row
                     ]
                 )
+        _write_feature_sidecar()
         logger.info("Database exported (grouped) to %s", path)
         return path
 
@@ -962,7 +1023,44 @@ class tsDatabase:
         else:
             df, group_map = _read_grouped_csv(path, n_hdr)
 
-        # 3. Pick the index column and resolve row mode
+        # 3-5. Delegate index selection + column classification + assignment
+        # to the shared ingestion path (also used by from_dataframe).
+        resolved_row_mode = self._ingest_dataframe(
+            df, group_map,
+            cell_id_col=cell_id_col,
+            protocol_cols=protocol_cols,
+            metadata_cols=metadata_cols,
+            row_mode=row_mode,
+            drug_col=drug_col,
+            unique_id_col=unique_id_col,
+        )
+        self._save_path = path
+        logger.info(
+            "Database loaded from CSV %s (%d rows, header_rows=%d, mode=%s)",
+            path, len(self.cellindex), n_hdr, resolved_row_mode,
+        )
+
+    def _ingest_dataframe(self, df: pd.DataFrame,
+                          group_map: Optional[Dict[str, str]] = None,
+                          *,
+                          cell_id_col: Optional[str] = None,
+                          protocol_cols: Optional[List[str]] = None,
+                          metadata_cols: Optional[List[str]] = None,
+                          row_mode: str = "auto",
+                          drug_col: str = "drug",
+                          unique_id_col: Optional[str] = None) -> str:
+        """Populate ``cellindex`` + ``exp`` from an already-parsed DataFrame.
+
+        Shared by :meth:`load_csv` and :meth:`from_dataframe`. ``group_map``
+        maps each column name to its lab group label (empty strings for
+        flat sources). Columns not listed in ``protocol_cols`` /
+        ``metadata_cols`` are auto-classified by name and value type.
+        Returns the resolved row mode.
+        """
+        if group_map is None:
+            group_map = {c: "" for c in df.columns}
+
+        # Pick the index column and resolve row mode
         idx_col, resolved_row_mode = _pick_index_column(
             df, cell_id_col, unique_id_col, row_mode,
         )
@@ -973,7 +1071,15 @@ class tsDatabase:
         df = df[~df.index.astype(str).str.strip().isin({"", "_", "nan", "None"})]
         df.index.name = "cell"
 
-        # 4. Build experimentalStructure and classify columns
+        # The database is cell-level: the index must be unique. When multiple
+        # rows share a cell id (per-recording source indexed by cell), collapse
+        # them into one cell, keeping the first non-null value per column so
+        # file assignments spread across rows are aggregated.
+        if not df.index.is_unique:
+            df = df.groupby(level=0, sort=False).first()
+            df.index.name = "cell"
+
+        # Build experimentalStructure and classify columns
         self.exp = experimentalStructure()
         meta_lookup = {m.lower() for m in DEFAULT_METADATA_COLS} \
             | set(_EXTENDED_METADATA_NAMES) \
@@ -1014,11 +1120,230 @@ class tsDatabase:
                 self.exp.mark_metadata(col)
 
         self.cellindex = df
-        self._save_path = path
-        logger.info(
-            "Database loaded from CSV %s (%d rows, header_rows=%d, mode=%s)",
-            path, len(df), n_hdr, resolved_row_mode,
+        return resolved_row_mode
+
+    def from_dataframe(self, df: pd.DataFrame, *,
+                       filename_cols: Optional[List[str]] = None,
+                       cell_id_col: Optional[str] = None,
+                       metadata_cols: Optional[List[str]] = None,
+                       protocol_cols: Optional[List[str]] = None,
+                       row_mode: str = "auto",
+                       drug_col: str = "drug",
+                       unique_id_col: Optional[str] = None) -> bool:
+        """Ingest an in-memory DataFrame (flat single-row header).
+
+        The DataFrame counterpart to :meth:`load_csv`: each row is a
+        cell (or recording), each column is auto-classified into a
+        *protocol* (holds file ids/paths) or *metadata* column unless
+        explicitly listed. ``filename_cols`` is a backward-compatible
+        alias for ``protocol_cols``. Returns ``True`` on success.
+        """
+        if df is None or getattr(df, "empty", True):
+            logger.error("from_dataframe: received an empty DataFrame")
+            return False
+        protos = protocol_cols if protocol_cols is not None else filename_cols
+        df = df.copy()
+        group_map = {c: "" for c in df.columns}
+        resolved = self._ingest_dataframe(
+            df, group_map,
+            cell_id_col=cell_id_col,
+            protocol_cols=protos,
+            metadata_cols=metadata_cols,
+            row_mode=row_mode,
+            drug_col=drug_col,
+            unique_id_col=unique_id_col,
         )
+        self._save_path = None
+        logger.info(
+            "Database loaded from DataFrame (%d rows, mode=%s)",
+            len(self.cellindex), resolved,
+        )
+        return True
+
+    # ------------------------------------------------------------------
+    # Feature store (computed features attached to recordings)
+    # ------------------------------------------------------------------
+
+    def import_spike_data(self, csv_path: str, *,
+                          prefix: str = "spike_",
+                          filename_col: str = "filename",
+                          create_missing: bool = False) -> Dict[str, Any]:
+        """Import a computed-feature CSV and attach features to cells.
+
+        Each CSV row is matched to a recording by comparing its
+        ``filename_col`` value's *stem* (basename without extension)
+        against the file ids/paths stored in the database's protocol
+        columns. Matched feature values are appended to :attr:`features`
+        (one row per matched recording), with columns renamed to
+        ``{prefix}{feature}``. Non-feature link columns
+        (``foldername``/``folder``/``protocol``/``filepath``) are skipped.
+
+        Parameters
+        ----------
+        csv_path
+            Path to the feature CSV (e.g. a spike-finder output).
+        prefix
+            Prefix applied to imported feature column names.
+        filename_col
+            Column in the CSV holding the recording filename.
+        create_missing
+            When True, rows whose filename matches no existing recording
+            create a new cell (named after the file stem) and assign the
+            file under its ``protocol`` value (or ``spike_analysis``).
+
+        Returns
+        -------
+        dict
+            ``{matched, unmatched, feature_cols, samples_unmatched}``.
+        """
+        spike_df = pd.read_csv(csv_path)
+        if filename_col not in spike_df.columns:
+            raise ValueError(
+                f"CSV must contain a {filename_col!r} column; "
+                f"found {list(spike_df.columns)}"
+            )
+
+        link_like = {
+            filename_col.lower(), "foldername", "folder", "protocol",
+            "filename", "filepath", "file_path", "path",
+        }
+        feature_cols = [c for c in spike_df.columns if c.lower() not in link_like]
+
+        # Build stem -> [(cell, base_protocol, condition), ...] lookup
+        stem_index: Dict[str, List[Tuple[str, str, Optional[str]]]] = {}
+        for cell in self.cellindex.index:
+            for col in self.get_protocol_columns():
+                try:
+                    val = self.cellindex.loc[cell, col]
+                except KeyError:
+                    continue
+                if pd.isna(val) or not str(val).strip():
+                    continue
+                base = self.protocol_base_name(col)
+                cond = self.protocol_condition(col)
+                for tok in str(val).split(";"):
+                    tok = tok.strip()
+                    if not tok:
+                        continue
+                    stem = os.path.splitext(os.path.basename(tok))[0]
+                    stem_index.setdefault(stem, []).append((str(cell), base, cond))
+
+        matched = 0
+        unmatched = 0
+        samples_unmatched: List[str] = []
+        new_rows: List[Dict[str, Any]] = []
+
+        for _, row in spike_df.iterrows():
+            raw_name = row[filename_col]
+            if pd.isna(raw_name):
+                continue
+            stem = os.path.splitext(os.path.basename(str(raw_name)))[0]
+            targets = stem_index.get(stem)
+
+            if not targets:
+                if create_missing:
+                    cell = stem
+                    if cell not in self.cellindex.index:
+                        self.add_cell(cell)
+                    proto = str(row.get("protocol", "") or "").strip() or "spike_analysis"
+                    self.assign_file(cell, proto, str(raw_name))
+                    targets = [(cell, proto, None)]
+                else:
+                    unmatched += 1
+                    if len(samples_unmatched) < 10:
+                        samples_unmatched.append(str(raw_name))
+                    continue
+
+            for cell, base, cond in targets:
+                rec: Dict[str, Any] = {
+                    "cell": cell,
+                    "protocol": base,
+                    "condition": cond,
+                    "source_file": str(raw_name),
+                }
+                for fc in feature_cols:
+                    rec[f"{prefix}{fc}"] = row[fc]
+                new_rows.append(rec)
+                matched += 1
+
+        if new_rows:
+            add_df = pd.DataFrame(new_rows)
+            if self.features.empty:
+                self.features = add_df
+            else:
+                self.features = pd.concat(
+                    [self.features, add_df], ignore_index=True,
+                )
+
+        logger.info(
+            "import_spike_data: %d matched, %d unmatched, %d feature columns",
+            matched, unmatched, len(feature_cols),
+        )
+        return {
+            "matched": matched,
+            "unmatched": unmatched,
+            "feature_cols": [f"{prefix}{c}" for c in feature_cols],
+            "samples_unmatched": samples_unmatched,
+        }
+
+    def get_features(self, merge: bool = False) -> pd.DataFrame:
+        """Return the feature store.
+
+        With ``merge=False`` (default) return the raw per-recording
+        store. With ``merge=True`` aggregate features to one row per
+        cell (last non-null value) and left-join onto ``cellindex`` for
+        a wide per-cell view.
+        """
+        if not merge or self.features.empty:
+            return self.features.copy()
+        feat_cols = [c for c in self.features.columns
+                     if c not in self.FEATURE_LINK_COLS]
+        if not feat_cols:
+            return self.cellindex.copy()
+        agg = self.features.groupby("cell")[feat_cols].last()
+        return self.cellindex.join(agg, how="left")
+
+    def to_anndata(self):
+        """Return the feature store as an :class:`anndata.AnnData`.
+
+        ``obs`` holds the link columns (cell/protocol/condition/source),
+        ``X`` the numeric feature matrix, ``var`` the feature names.
+        Requires the optional ``anndata`` package (``gigaseal[web]``).
+        """
+        try:
+            import anndata as ad
+        except ImportError as exc:  # pragma: no cover - optional dep
+            raise ImportError(
+                "to_anndata() requires the 'anndata' package. "
+                "Install it via: pip install 'gigaseal[web]'"
+            ) from exc
+
+        link_cols = [c for c in self.FEATURE_LINK_COLS
+                     if c in self.features.columns]
+        feat_cols = [c for c in self.features.columns if c not in link_cols]
+        obs = self.features[link_cols].reset_index(drop=True).copy()
+        obs.index = obs.index.astype(str)
+        # h5py cannot serialize object columns containing None/NaN (e.g. an
+        # unset ``condition``); coerce string-like obs columns to plain str.
+        for col in obs.columns:
+            if obs[col].dtype == object or isinstance(obs[col].dtype, pd.StringDtype):
+                obs[col] = obs[col].fillna("").astype(str)
+        if feat_cols:
+            X = (self.features[feat_cols]
+                 .apply(pd.to_numeric, errors="coerce")
+                 .to_numpy(dtype=float))
+        else:
+            X = np.empty((len(self.features), 0), dtype=float)
+        var = pd.DataFrame({"feature_name": feat_cols}, index=feat_cols)
+        return ad.AnnData(X=X, obs=obs, var=var)
+
+    def save_h5ad(self, path: str) -> str:
+        """Write the feature store to an AnnData ``.h5ad`` file."""
+        if not path.endswith(".h5ad"):
+            path += ".h5ad"
+        self.to_anndata().write_h5ad(path)
+        logger.info("Features exported to %s", path)
+        return path
 
     # ------------------------------------------------------------------
     # Convenience: new empty database
@@ -1029,7 +1354,12 @@ class tsDatabase:
         self.cellindex = pd.DataFrame()
         self.cellindex.index.name = "cell"
         self.exp = experimentalStructure()
+        self.clear_features()
         self._save_path = None
+
+    def clear_features(self):
+        """Reset the feature store to empty."""
+        self.features = pd.DataFrame(columns=self.FEATURE_LINK_COLS)
 
     def next_cell_name(self) -> str:
         """Generate the next auto-incremented cell name."""

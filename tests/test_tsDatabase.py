@@ -342,3 +342,211 @@ class TestClear:
         db.clear()
         assert db.cell_count() == 0
         assert db.get_protocol_columns() == []
+
+
+# ======================================================================
+# tsDatabase — from_dataframe (in-memory ingestion)
+# ======================================================================
+
+class TestFromDataFrame:
+
+    def _demo_df(self):
+        return pd.DataFrame({
+            "CELL_ID": ["C1", "C2"],
+            "IC1": ["240507_0000", "240507_0010"],
+            "Sag": ["240507_0001", "240507_0011"],
+            "drug": ["NE", "aCSF"],
+            "NOTE": ["good", "ok"],
+        })
+
+    def test_basic_ingest(self):
+        db = tsDatabase()
+        ok = db.from_dataframe(
+            self._demo_df(), cell_id_col="CELL_ID",
+            metadata_cols=["drug", "NOTE"],
+        )
+        assert ok is True
+        assert set(db.cell_names()) == {"C1", "C2"}
+        assert "IC1" in db.get_protocol_columns()
+        assert "Sag" in db.get_protocol_columns()
+        assert "drug" in db.get_metadata_columns()
+        assert "NOTE" in db.get_metadata_columns()
+
+    def test_auto_classifies_file_id_columns(self):
+        db = tsDatabase()
+        db.from_dataframe(self._demo_df(), cell_id_col="CELL_ID")
+        # date-stamped tokens should be classified as protocols
+        assert "IC1" in db.get_protocol_columns()
+        assert "Sag" in db.get_protocol_columns()
+
+    def test_filename_cols_alias(self):
+        db = tsDatabase()
+        db.from_dataframe(
+            self._demo_df(), cell_id_col="CELL_ID",
+            filename_cols=["IC1"], metadata_cols=["drug", "NOTE"],
+        )
+        assert "IC1" in db.get_protocol_columns()
+
+    def test_empty_dataframe_returns_false(self):
+        db = tsDatabase()
+        assert db.from_dataframe(pd.DataFrame()) is False
+
+    def test_matches_load_csv(self, tmp_path):
+        # from_dataframe on a flat CSV should equal load_csv on the same file
+        df = self._demo_df()
+        path = str(tmp_path / "flat.csv")
+        df.to_csv(path, index=False)
+
+        db_csv = tsDatabase()
+        db_csv.load_csv(path, cell_id_col="CELL_ID",
+                        metadata_cols=["drug", "NOTE"])
+        db_df = tsDatabase()
+        db_df.from_dataframe(df, cell_id_col="CELL_ID",
+                             metadata_cols=["drug", "NOTE"])
+
+        assert set(db_csv.get_protocol_columns()) == set(db_df.get_protocol_columns())
+        assert set(db_csv.cell_names()) == set(db_df.cell_names())
+
+
+# ======================================================================
+# tsDatabase — feature import / store
+# ======================================================================
+
+class TestFeatureImport:
+
+    def _build_db(self):
+        db = tsDatabase()
+        df = pd.DataFrame({
+            "CELL_ID": ["C1", "C2"],
+            "IC1": ["240507_0000", "240507_0010"],
+            "drug": ["NE", "aCSF"],
+        })
+        db.from_dataframe(df, cell_id_col="CELL_ID", metadata_cols=["drug"])
+        return db
+
+    def _spike_csv(self, tmp_path, name="spikes.csv"):
+        spike = pd.DataFrame({
+            "foldername": ["/data", "/data"],
+            "filename": ["240507_0000", "240507_0010"],
+            "protocol": ["IC1", "IC1"],
+            "mean_rate": [10.0, 20.0],
+            "rheobase": [50.0, 60.0],
+        })
+        path = str(tmp_path / name)
+        spike.to_csv(path, index=False)
+        return path
+
+    def test_import_matches_by_stem(self, tmp_path):
+        db = self._build_db()
+        res = db.import_spike_data(self._spike_csv(tmp_path))
+        assert res["matched"] == 2
+        assert res["unmatched"] == 0
+        assert not db.features.empty
+        assert "spike_mean_rate" in db.features.columns
+        assert "spike_rheobase" in db.features.columns
+        # link columns present
+        for col in ("cell", "protocol", "source_file"):
+            assert col in db.features.columns
+
+    def test_features_not_added_to_cellindex(self, tmp_path):
+        db = self._build_db()
+        db.import_spike_data(self._spike_csv(tmp_path))
+        assert not any(c.startswith("spike_") for c in db.cellindex.columns)
+
+    def test_unmatched_rows_reported(self, tmp_path):
+        db = self._build_db()
+        spike = pd.DataFrame({
+            "filename": ["999_nomatch"],
+            "mean_rate": [1.0],
+        })
+        path = str(tmp_path / "nomatch.csv")
+        spike.to_csv(path, index=False)
+        res = db.import_spike_data(path)
+        assert res["matched"] == 0
+        assert res["unmatched"] == 1
+        assert db.features.empty
+
+    def test_create_missing(self, tmp_path):
+        db = self._build_db()
+        spike = pd.DataFrame({
+            "filename": ["new_recording"],
+            "protocol": ["IC1"],
+            "mean_rate": [5.0],
+        })
+        path = str(tmp_path / "new.csv")
+        spike.to_csv(path, index=False)
+        res = db.import_spike_data(path, create_missing=True)
+        assert res["matched"] == 1
+        assert "new_recording" in db.cell_names()
+
+    def test_get_features_merged(self, tmp_path):
+        db = self._build_db()
+        db.import_spike_data(self._spike_csv(tmp_path))
+        merged = db.get_features(merge=True)
+        assert "spike_mean_rate" in merged.columns
+        assert merged.loc["C1", "spike_mean_rate"] == 10.0
+        assert merged.loc["C2", "spike_mean_rate"] == 20.0
+
+    def test_missing_filename_col_raises(self, tmp_path):
+        db = self._build_db()
+        bad = pd.DataFrame({"foo": [1]})
+        path = str(tmp_path / "bad.csv")
+        bad.to_csv(path, index=False)
+        with pytest.raises(ValueError):
+            db.import_spike_data(path)
+
+    def test_clear_features(self, tmp_path):
+        db = self._build_db()
+        db.import_spike_data(self._spike_csv(tmp_path))
+        db.clear_features()
+        assert db.features.empty
+
+    def test_xlsx_feature_sheet_roundtrip(self, tmp_path):
+        db = self._build_db()
+        db.import_spike_data(self._spike_csv(tmp_path))
+        path = str(tmp_path / "db.xlsx")
+        db.save_xlsx(path, feature_export="sheet")
+
+        db2 = tsDatabase()
+        db2.load_xlsx(path)
+        assert not db2.features.empty
+        assert "spike_mean_rate" in db2.features.columns
+        # main sheet stays lean
+        assert not any(c.startswith("spike_") for c in db2.cellindex.columns)
+
+    def test_xlsx_feature_merged(self, tmp_path):
+        db = self._build_db()
+        db.import_spike_data(self._spike_csv(tmp_path))
+        path = str(tmp_path / "merged.xlsx")
+        db.save_xlsx(path, feature_export="merged")
+
+        main = pd.read_excel(path, sheet_name="CellIndex", index_col=0)
+        assert "spike_mean_rate" in main.columns
+
+    def test_csv_feature_sidecar(self, tmp_path):
+        db = self._build_db()
+        db.import_spike_data(self._spike_csv(tmp_path))
+        path = str(tmp_path / "db.csv")
+        db.save_csv(path, feature_export="separate")
+        side = path[:-4] + "_features.csv"
+        assert os.path.isfile(side)
+        sidecar = pd.read_csv(side)
+        assert "spike_mean_rate" in sidecar.columns
+
+    def test_to_anndata(self, tmp_path):
+        pytest.importorskip("anndata")
+        db = self._build_db()
+        db.import_spike_data(self._spike_csv(tmp_path))
+        adata = db.to_anndata()
+        assert adata.n_obs == 2
+        assert "spike_mean_rate" in list(adata.var_names)
+        assert "cell" in adata.obs.columns
+
+    def test_save_h5ad(self, tmp_path):
+        pytest.importorskip("anndata")
+        db = self._build_db()
+        db.import_spike_data(self._spike_csv(tmp_path))
+        path = str(tmp_path / "feats.h5ad")
+        out = db.save_h5ad(path)
+        assert os.path.isfile(out)
+
