@@ -47,6 +47,11 @@ DEMO_ABF_3 = DEMO_ABFS[2] if len(DEMO_ABFS) > 2 else os.path.join(TEST_DATA_DIR,
 DEMO_KNOWN_GOOD_PATH = os.path.join(TEST_DATA_DIR, 'demo_known_good_df.joblib')
 HAS_DEMO_DATA = len(DEMO_ABFS) >= 1
 
+# The ``test_full_*`` tests run over a large local dataset (not in the repo) and
+# are opt-in only. Set GIGASEAL_RUN_FULL_TESTS=1 to enable them.
+RUN_FULL_TESTS = os.getenv('GIGASEAL_RUN_FULL_TESTS', '').lower() in ('1', 'true', 'yes')
+_FULL_SKIP_REASON = "Full-dataset test; set GIGASEAL_RUN_FULL_TESTS=1 to opt in (requires local data)."
+
 #
 ROUTE_PYTEST = False #set to False to skip the tests that require the demo data, which is not included in the repo, please contact me if you would like to run these tests
 
@@ -63,6 +68,13 @@ def _compare_dataframes(df_known, df_test, cols_to_skip=None, threshold=0.01):
     # Align by filename
     df_known = df_known.sort_values(by='filename').set_index('filename')
     df_test = df_test.sort_values(by='filename').set_index('filename')
+    # Align rows on the union of filenames so column comparisons always have
+    # matching lengths; a filename present in one frame but not the other shows
+    # up as a large per-column diff (NaN -> sentinel) rather than a broadcast
+    # ValueError.
+    all_filenames = df_known.index.union(df_test.index)
+    df_known = df_known.reindex(all_filenames)
+    df_test = df_test.reindex(all_filenames)
     # Drop non-feature columns (only those that exist)
     drop_known = [c for c in cols_to_skip if c in df_known.columns]
     drop_test = [c for c in cols_to_skip if c in df_test.columns]
@@ -229,7 +241,7 @@ def test_demo_save_subthres_data(tmp_path, abf_path):
 
 
 ### === tests for larger feature extractor pipeline, have to be run manually since they require the data files, which are not included in the repo, please contact me if you would like to run these tests === ###
-@pytest.mark.skipif(os.getenv('GITHUB_ACTIONS') == 'true', reason="This test is not meant to run on GitHub Actions.")
+@pytest.mark.skipif(not RUN_FULL_TESTS, reason=_FULL_SKIP_REASON)
 def test_full_dataframe_save():
     # Run the feature extractor
     spike, feat_df, running = batch_feature_extract(os.path.expanduser('~/Dropbox/sara_cell_v2'), DEFAULT_DICT)
@@ -238,7 +250,7 @@ def test_full_dataframe_save():
     #checked manually later
 
 
-@pytest.mark.skipif(os.getenv('GITHUB_ACTIONS') == 'true', reason="This test is not meant to run on GitHub Actions.")
+@pytest.mark.skipif(not RUN_FULL_TESTS, reason=_FULL_SKIP_REASON)
 def test_full_feature_extractor():
     # Load the known good df
     df = load(f'{os.path.dirname(__file__)}/test_data/known_good_df.joblib')
@@ -312,7 +324,7 @@ def test_full_feature_extractor():
     print("Dataframes are not equal, but mean percent error is below threshold, please check diffs.xlsx for details")
 
 
-@pytest.mark.skipif(os.getenv('GITHUB_ACTIONS') == 'true', reason="This test is not meant to run on GitHub Actions.")
+@pytest.mark.skipif(not RUN_FULL_TESTS, reason=_FULL_SKIP_REASON)
 def test_full_analyze_funcs():
     files = glob.glob(os.path.expanduser('~/Dropbox/sara_cell_v2') + '/**/*.abf', recursive=True)
     #load the protocols
@@ -321,7 +333,7 @@ def test_full_analyze_funcs():
     print(spike_times)
 
 
-@pytest.mark.skipif(os.getenv('GITHUB_ACTIONS') == 'true', reason="This test is not meant to run on GitHub Actions.")
+@pytest.mark.skipif(not RUN_FULL_TESTS, reason=_FULL_SKIP_REASON)
 def test_full_subthreshold_funcs():
     #load a file
     files = glob.glob(os.path.dirname(__file__) + '/**/*.abf', recursive=True)
@@ -333,7 +345,7 @@ def test_full_subthreshold_funcs():
     save_subthres_data(avg, main, root_fold=os.path.dirname(__file__))
 
 
-@pytest.mark.skipif(os.getenv('GITHUB_ACTIONS') == 'true', reason="This test is not meant to run on GitHub Actions.")
+@pytest.mark.skipif(not RUN_FULL_TESTS, reason=_FULL_SKIP_REASON)
 def test_full_modular_analysis():
     #we need to make sure the modular feature analysis is working:
     # Load the known good df
