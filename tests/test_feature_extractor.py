@@ -20,6 +20,7 @@ import glob
 import pytest
 
 COLS_TO_SKIP = ['Best Fit', 'Curve fit b1', #random / moving api
+                 'Curve fit b2', 'Taum (Slow)', #degenerate double-exp fit outputs; platform-dependent (scipy), not reproducible
                  'foldername', 'protocol', #not a feature
                  ]
 

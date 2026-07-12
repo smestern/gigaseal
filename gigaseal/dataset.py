@@ -3,18 +3,25 @@ import numpy as np
 import logging
 from ipfx.sweep import Sweep, SweepSet
 from .loadFile import loadFile
-import os
-try:
-    from ipfx.dataset.ephys_data_set import EphysDataSet
-    from ipfx.stimulus import StimulusOntology
-    from ipfx.dataset.ephys_nwb_data import EphysNWBData, get_finite_or_none
-    from ipfx.dataset.hbg_nwb_data import HBGNWBData
-except ImportError:
-    print(f"Error importing from ipfx.dataset.ephys_data_set, ipfx.stimulus, ipfx.dataset.ephys_nwb_data, ipfx.dataset.hbg_nwb_data")
-    print(f"Likely not an issue, this message is for Sam")
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+import os
+try:
+
+    from ipfx.dataset.ephys_data_set import EphysDataSet
+    from ipfx.stimulus import StimulusOntology
+    from ipfx.dataset.ephys_nwb_data import EphysNWBData, get_finite_or_none
+except ImportError:
+    print(f"Error importing from ipfx.dataset.ephys_data_set, ipfx.stimulus, ipfx.dataset.ephys_nwb_data")
+    print(f"Likely not an issue, this message is for Sam")
+
+try:
+     from ipfx.dataset.hbg_nwb_data import HBGNWBData
+except ImportError:
+    print(f"Error importing from ipfx.dataset.hbg_nwb_data")
+    print(f"Likely not an issue, this message is for Sam")
+
 
 
 class cellData(object):
