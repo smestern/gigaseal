@@ -28,3 +28,14 @@ register(GrowthFactorAnalysis)
 # programmatic users can reach it by name, but it sets ``hidden = True`` so it
 # never shows up in the end-user GUI.
 register(PeakDetector)
+
+__all__ = [
+    "SpikeAnalysis",
+    "LegacySpikeAnalysis",
+    "SubthresholdAnalysis",
+    "PeakDetector",
+    "QcAnalysis",
+    "RmpAnalysis",
+    "MembraneAnalysis",
+    "GrowthFactorAnalysis",
+]

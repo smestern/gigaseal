@@ -187,6 +187,143 @@ class TestSummarySheets:
 
 
 # ======================================================================
+# 1c) Spec-driven summary aggregation
+# ======================================================================
+
+class TestSummarySpec:
+    def _make_spec_batch(self, spec):
+        """Combined per-sweep result over 2 files carrying *spec*."""
+        from gigaseal.analysis.result import AnalysisResult
+        r1 = AnalysisResult(
+            name="spike", file_path="a.abf", summary_spec=spec,
+            sweep_results=[
+                {"spike_count": 2, "peak_v": [40.0, 20.0], "peak_t": [0.1, 0.2],
+                 "peak_index": [10, 20]},
+                {"spike_count": 4, "peak_v": [50.0, 30.0, 10.0, 0.0],
+                 "peak_t": [0.1, 0.2, 0.3, 0.4], "peak_index": [1, 2, 3, 4]},
+            ],
+        )
+        r2 = AnalysisResult(
+            name="spike", file_path="b.abf", summary_spec=spec,
+            sweep_results=[
+                {"spike_count": 0, "peak_v": [], "peak_t": [], "peak_index": []},
+            ],
+        )
+        return AnalysisResult.concatenate([r1, r2])
+
+    def test_spec_propagates_through_concatenate(self):
+        from gigaseal.analysis.result import SummarySpec
+        spec = SummarySpec(list_reducer="mean")
+        combined = self._make_spec_batch(spec)
+        assert combined.summary_spec is spec
+
+    def test_list_reducer_makes_per_spike_features_averageable(self):
+        from gigaseal.analysis.result import SummarySpec
+        spec = SummarySpec(list_reducer="mean")
+        summary = self._make_spec_batch(spec).summary_dataframe().set_index("file")
+        # a.abf: sweep means = mean(40,20)=30 and mean(50,30,10,0)=22.5
+        #        file mean = (30 + 22.5) / 2 = 26.25
+        assert summary.loc["a.abf", "peak_v"] == pytest.approx(26.25)
+        # b.abf has only an empty sweep -> NaN mean
+        assert np.isnan(summary.loc["b.abf", "peak_v"])
+
+    def test_summary_exclude_globs(self):
+        from gigaseal.analysis.result import SummarySpec
+        spec = SummarySpec(list_reducer="mean",
+                           summary_exclude=["*_t", "*_index"])
+        summary = self._make_spec_batch(spec).summary_dataframe()
+        assert "peak_t" not in summary.columns
+        assert "peak_index" not in summary.columns
+        assert "peak_v" in summary.columns
+
+    def test_aggregation_reducer_override(self):
+        from gigaseal.analysis.result import SummarySpec
+        spec = SummarySpec(aggregations={"spike_count": "sum"})
+        summary = self._make_spec_batch(spec).summary_dataframe().set_index("file")
+        # spike_count summed instead of meaned: a.abf = 2 + 4 = 6
+        assert summary.loc["a.abf", "spike_count"] == 6
+
+    def test_per_sweep_pivot_generic_labels(self):
+        from gigaseal.analysis.result import SummarySpec
+        spec = SummarySpec(per_sweep_columns=["spike_count"])
+        summary = self._make_spec_batch(spec).summary_dataframe().set_index("file")
+        assert summary.loc["a.abf", "Sweep 000 spike_count"] == 2
+        assert summary.loc["a.abf", "Sweep 001 spike_count"] == 4
+
+    def test_per_sweep_pivot_legacy_template(self):
+        from gigaseal.analysis.result import SummarySpec
+        spec = SummarySpec(
+            per_sweep_columns={"spike_count": "Sweep {n:03d} spike count"})
+        summary = self._make_spec_batch(spec).summary_dataframe().set_index("file")
+        assert summary.loc["a.abf", "Sweep 001 spike count"] == 4
+        # b.abf only has sweep 0 -> sweep-1 column is NaN for it
+        assert np.isnan(summary.loc["b.abf", "Sweep 001 spike count"])
+
+    def test_spike_module_declares_spec(self):
+        from gigaseal.analysis import SpikeAnalysis
+        spec = SpikeAnalysis()._summary_spec()
+        assert spec.list_reducer == "mean"
+        assert spec.per_sweep_columns == {"spike_count": "Sweep {n:03d} spike count"}
+        assert "*_t" in spec.summary_exclude
+
+    def test_first_spike_takes_first_of_first_firing_sweep(self):
+        from gigaseal.analysis.result import SummarySpec, FirstSpikeSpec
+        # a.abf: sweep 0 already fires -> rheobase = sweep 0, spike 0.
+        spec = SummarySpec(
+            first_spike=FirstSpikeSpec(columns={"peak_v": "rheobase_peak"}))
+        summary = self._make_spec_batch(spec).summary_dataframe().set_index("file")
+        # first spike of sweep 0 (peak_v[0]) = 40.0, NOT the mean.
+        assert summary.loc["a.abf", "rheobase_peak"] == pytest.approx(40.0)
+
+    def test_first_spike_scalar_column(self):
+        from gigaseal.analysis.result import AnalysisResult, SummarySpec, FirstSpikeSpec
+        # train_latency is a per-sweep scalar, not a list -> taken as-is.
+        r = AnalysisResult(
+            name="spike", file_path="a.abf",
+            summary_spec=SummarySpec(
+                first_spike=FirstSpikeSpec(
+                    columns={"train_latency": "rheobase_latency"})),
+            sweep_results=[
+                {"spike_count": 0, "train_latency": np.nan},
+                {"spike_count": 3, "train_latency": 0.05},
+            ],
+        )
+        combined = AnalysisResult.concatenate([r])
+        summary = combined.summary_dataframe().set_index("file")
+        assert summary.loc["a.abf", "rheobase_latency"] == pytest.approx(0.05)
+
+    def test_first_spike_no_spikes_absent_or_nan(self):
+        from gigaseal.analysis.result import SummarySpec, FirstSpikeSpec
+        spec = SummarySpec(
+            first_spike=FirstSpikeSpec(columns={"peak_v": "rheobase_peak"}))
+        summary = self._make_spec_batch(spec).summary_dataframe().set_index("file")
+        # b.abf never fires -> no rheobase value.
+        assert np.isnan(summary.loc["b.abf", "rheobase_peak"])
+
+    def test_first_spike_list_form_uses_prefix(self):
+        from gigaseal.analysis.result import SummarySpec, FirstSpikeSpec
+        spec = SummarySpec(
+            first_spike=FirstSpikeSpec(columns=["peak_v"], prefix="rheo_"))
+        summary = self._make_spec_batch(spec).summary_dataframe().set_index("file")
+        assert summary.loc["a.abf", "rheo_peak_v"] == pytest.approx(40.0)
+
+    def test_spike_module_declares_rheobase(self):
+        from gigaseal.analysis import SpikeAnalysis
+        spec = SpikeAnalysis()._summary_spec()
+        assert spec.first_spike is not None
+        assert spec.first_spike.trigger == "spike_count"
+        assert spec.first_spike.columns["threshold_v"] == "rheobase_threshold"
+
+    def test_summary_config_attrs_are_not_parameters(self):
+        # The summary_* class attrs must not leak into parameter discovery.
+        from gigaseal.analysis import SpikeAnalysis
+        params = SpikeAnalysis().get_parameters()
+        for leaked in ("summary_list_reducer", "summary_aggregations",
+                       "summary_per_sweep_columns", "summary_exclude"):
+            assert leaked not in params
+
+
+# ======================================================================
 # 2) AnalysisBase — subclassing and parameter introspection
 # ======================================================================
 

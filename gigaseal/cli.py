@@ -52,14 +52,14 @@ logger = logging.getLogger(__name__)
 
 _GUI_LAUNCHERS: Dict[str, Dict[str, str]] = {
     "spike-finder": {
-        "module": "gigaseal.gui.spikeFinder",
-        "attr": "main",
-        "desc": "Spike detection GUI (legacy spikeFinder)",
-    },
-    "new-spike-finder": {
         "module": "gigaseal.gui.app",
         "attr": "main",
         "desc": "Next-generation spike finder GUI",
+    },
+    "spike-finder-legacy": {
+        "module": "gigaseal.gui.spikeFinder",
+        "attr": "main",
+        "desc": "Spike detection GUI (legacy spikeFinder)",
     },
     "database-builder": {
         "module": "gigaseal.gui.databaseBuilder",

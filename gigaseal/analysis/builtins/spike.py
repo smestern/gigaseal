@@ -20,8 +20,8 @@ class LegacySpikeAnalysis(AnalysisBase):
     Detect action potentials and extract spike features using the ipfx
     feature extractor.
 
-    This module wraps ``gigaseal.featureExtractor.analyze_sweep``
-    so all existing spike-detection logic is reused.
+    This module wraps ``gigaseal.featureExtractor.analyze``
+    so all existing spike-detection logic is reused. 
 
     Parameters
     ----------
@@ -93,7 +93,14 @@ class LegacySpikeAnalysis(AnalysisBase):
                                         return_summary_frames=True)
 
         # Build output dict
-        result = spike_df.to_dict()
+        result = spike_df.to_dict(orient="list")
+        #should be a one item list so we need to pop up for the new formatting
+        for key in result.keys():
+            if len(result[key]) == 1:
+                result[key] = result[key][0]
+            else:
+                logger.warning(f"LegacySpikeAnalysis: expected single value for {key}, got {len(result[key])} values. Keeping as list.")
+                result[key] = result[key]
         return result
 
 class SpikeAnalysis(AnalysisBase):
@@ -140,6 +147,31 @@ class SpikeAnalysis(AnalysisBase):
     thresh_frac: float = 0.2
     filter: int = 0
     bessel_filter: int = -1
+
+    # ---- Summary-sheet configuration ---------------------------------
+    # Collapse per-spike arrays (peak_v, threshold_v, width, ...) to a per-sweep
+    # mean, then average across sweeps -> "mean height / threshold / width".
+    summary_list_reducer = "mean"
+    summary_default_reducer = "mean"
+    summary_aggregations = {"spike_count": "mean"}
+    # Also emit one legacy-style column per sweep, e.g. "Sweep 001 spike count".
+    summary_per_sweep_columns = {"spike_count": "Sweep {n:03d} spike count"}
+    # Drop index/time columns -- averaging spike times/indices is meaningless.
+    summary_exclude = ["sweep_number", "clipped", "*_index", "*_i", "*_t"]
+    # "rheobase" features: first spike of the first sweep that fired.
+    summary_first_spike = {
+        "trigger": "spike_count",
+        "columns": {
+            "threshold_v": "rheobase_threshold",
+            "peak_v": "rheobase_peak",
+            "width": "rheobase_width",
+            "upstroke": "rheobase_upstroke",
+            "downstroke": "rheobase_downstroke",
+            "fast_trough_v": "rheobase_fast_trough",
+            "slow_trough_v": "rheobase_slow_trough",
+            "train_latency": "rheobase_latency",
+        },
+    }
 
     def analyze(self, x, y, c, **kwargs) -> dict:
         """

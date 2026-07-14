@@ -42,16 +42,31 @@ Public API
 """
 
 from .base import AnalysisBase
-from .result import AnalysisResult
+from .result import AnalysisResult, SummarySpec, FirstSpikeSpec
 from .registry import register, get, list_modules, get_all, clear
 from .runner import run_batch, save_results
 
 # Auto-register built-in modules on import
 from . import builtins  # noqa: F401
 
+# Re-export the concrete built-in analysis classes so they can be imported
+# directly, e.g. ``from gigaseal.analysis import SpikeAnalysis``.
+from .builtins import (
+    SpikeAnalysis,
+    LegacySpikeAnalysis,
+    SubthresholdAnalysis,
+    PeakDetector,
+    QcAnalysis,
+    RmpAnalysis,
+    MembraneAnalysis,
+    GrowthFactorAnalysis,
+)
+
 __all__ = [
     "AnalysisBase",
     "AnalysisResult",
+    "SummarySpec",
+    "FirstSpikeSpec",
     "register",
     "get",
     "list_modules",
@@ -59,6 +74,15 @@ __all__ = [
     "clear",
     "run_batch",
     "save_results",
+    # Built-in analysis modules
+    "SpikeAnalysis",
+    "LegacySpikeAnalysis",
+    "SubthresholdAnalysis",
+    "PeakDetector",
+    "QcAnalysis",
+    "RmpAnalysis",
+    "MembraneAnalysis",
+    "GrowthFactorAnalysis",
 ]
 
 

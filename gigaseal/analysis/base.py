@@ -86,6 +86,18 @@ class AnalysisBase:
     sweep_mode: str = "per_sweep"  # "per_sweep" or "per_file"
     hidden: bool = False  # if True, GUI module pickers should skip this module
 
+    # ---- optional summary configuration -------------------------------
+    # These are intentionally *unannotated* so they are not mistaken for
+    # analysis parameters (parameter discovery only scans ``__annotations__``).
+    # Override on a subclass to customise how the per-file Summary sheet is
+    # built from per-sweep rows.  See :class:`gigaseal.analysis.result.SummarySpec`.
+    summary_list_reducer = None          # e.g. "mean" -> collapse per-spike lists
+    summary_aggregations = {}            # {col: reducer} overrides
+    summary_default_reducer = "mean"     # reducer for numeric cols w/o override
+    summary_per_sweep_columns = []       # list[str] or {col: label_template}
+    summary_exclude = []                 # cols to drop from the summary
+    summary_first_spike = None           # dict -> FirstSpikeSpec (rheobase cols)
+
     def __init__(self, **overrides):
         """
         Instantiate the module, optionally overriding parameter defaults.
@@ -192,6 +204,7 @@ class AnalysisBase:
             name=self.name,
             file_path=file_path,
             success=True,
+            summary_spec=self._summary_spec(),
         )
 
         # --- determine sweeps to process ----------------------------------
@@ -370,6 +383,39 @@ class AnalysisBase:
             name: getattr(self, name)
             for name in self._param_names()
         }
+
+    # ------------------------------------------------------------------
+    # Summary configuration
+    # ------------------------------------------------------------------
+
+    def _summary_spec(self):
+        """
+        Build the :class:`SummarySpec` describing how this module's per-file
+        Summary sheet should be assembled from per-sweep rows.
+
+        Reads the optional ``summary_*`` class attributes.  When they are all
+        left at their defaults the returned spec reproduces the historic
+        behaviour (mean numeric columns, drop list columns).
+        """
+        from .result import SummarySpec, FirstSpikeSpec
+
+        first_spike = (
+            FirstSpikeSpec(**self.summary_first_spike)
+            if self.summary_first_spike else None
+        )
+
+        return SummarySpec(
+            list_reducer=self.summary_list_reducer,
+            aggregations=dict(self.summary_aggregations),
+            default_reducer=self.summary_default_reducer,
+            per_sweep_columns=(
+                dict(self.summary_per_sweep_columns)
+                if isinstance(self.summary_per_sweep_columns, dict)
+                else list(self.summary_per_sweep_columns)
+            ),
+            summary_exclude=list(self.summary_exclude),
+            first_spike=first_spike,
+        )
 
     # ------------------------------------------------------------------
     # Annotation helpers
