@@ -263,7 +263,7 @@ class AnalysisController(QObject):
         progress.show()
 
         def _run():
-            from gigaseal.analysis.runner import run_batch, save_results
+            from gigaseal.analysis import run_batch, save_results
 
             proto = protocol_filter if protocol_filter and protocol_filter != "[No Filter]" else None
             result = run_batch(

@@ -1,5 +1,5 @@
 ---
-description: "Use when authoring or modifying analysis modules in gigaseal/analysis/ — covers AnalysisBase contract, parameter discovery, sweep_mode semantics, and registry patterns. Apply when subclassing AnalysisBase, registering modules, or touching builtins."
+description: "Use when authoring or modifying analysis modules in gigaseal/analysis/ — covers AnalysisBase contract, parameter discovery, sweep_mode semantics, and registry patterns. Apply when subclassing AnalysisBase, registering modules, or touching the built-in analysis modules."
 applyTo: "gigaseal/analysis/**"
 ---
 
@@ -33,13 +33,13 @@ The modular analysis framework lives in [gigaseal/analysis/](../../gigaseal/anal
 
 - **Register at module level**, not inside functions or `if __name__ == ...`. `run_batch(n_jobs>1)` uses `ProcessPoolExecutor` on Windows — modules must be importable in worker processes.
 
-- **Built-ins delegate to legacy code.** Wrappers in [gigaseal/analysis/builtins/](../../gigaseal/analysis/builtins/) call into `featureExtractor.py` / `patch_subthres.py`. Do not duplicate logic — wrap it.
+- **Built-ins delegate to legacy code.** The built-in analysis modules live directly under [gigaseal/analysis/](../../gigaseal/analysis/) (e.g. `spike.py`, `subthreshold.py`) and call into `featureExtractor.py` / `patch_subthres.py`. The framework internals (`AnalysisBase`, registry, result, runner) live in [gigaseal/analysis/core/](../../gigaseal/analysis/core/). Do not duplicate logic — wrap it.
 
 - **Legacy `featureExtractor.py` is frozen.** Never change its public function signatures (`analyze`, `analyze_sweep`, `analyze_sweepset`, `batch_feature_extract`) — the GUI and bin scripts still depend on them.
 
 ## Patterns
 
-**Reference implementation** (10 lines of user code): [gigaseal/analysis/builtins/example.py](../../gigaseal/analysis/builtins/example.py).
+**Reference implementation** (10 lines of user code): [gigaseal/analysis/example.py](../../gigaseal/analysis/example.py).
 
 **Runtime parameter override:**
 ```python
@@ -62,4 +62,4 @@ Every new module needs a test in [tests/test_analysis_framework.py](../../tests/
 
 - Re-creating `AnalysisModule`, `AnalysisParameters`, `Parameter`, or `AnalysisRunner` (all removed; renamed to `_legacy_*`).
 - Calling `module.run_batch_analysis(...)` / `module.save_results(...)` / `module.get_ui_elements()` / `module.parse_ui_params(...)` — these are pre-refactor methods. Use the new equivalents listed in the migration table in [ANALYSIS_REFACTOR.md](../../ANALYSIS_REFACTOR.md).
-- Importing IPFX at module top level in `analysis/builtins/*` — keep imports inside `analyze()` or guard them, so the framework remains importable without optional deps.
+- Importing IPFX at module top level in the built-in module files under `analysis/` — keep imports inside `analyze()` or guard them, so the framework remains importable without optional deps.

@@ -16,7 +16,7 @@ import logging
 
 import numpy as np
 
-from ..base import AnalysisBase
+from .core.base import AnalysisBase
 
 logger = logging.getLogger(__name__)
 

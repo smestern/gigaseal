@@ -15,7 +15,7 @@ Currently a **live triple** plus script copies.
 
 - [ ] `gigaseal/QC.py` — original core module
 - [ ] `gigaseal/_legacy/QC.py` — copy staged into `_legacy`
-- [ ] `gigaseal/analysis/builtins/qc.py` — copy colocated with `QcAnalysis`
+- [ ] `gigaseal/analysis/qc.py` — copy colocated with `QcAnalysis`
 - [ ] `gigaseal/bin/run_QC.py` — local copies (all 5)
 - [ ] `gigaseal/dev/epsp_analysis.py` — `find_zero`, `find_baseline` (+ others)
 - [ ] `gigaseal/dev/run_APisolation_ipfx_fv_ic1.py` — all 5

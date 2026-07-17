@@ -6,8 +6,11 @@ Owner action: author will handle actual code placement/moves.
 ## Context
 
 - The modular framework (`gigaseal/analysis/`) is the long-term source of truth.
-  Built-in wrappers in `analysis/builtins/` currently delegate to the frozen
-  legacy modules (`featureExtractor.py`, `patch_subthres.py`).
+  The built-in analysis modules live directly under `gigaseal/analysis/`
+  (e.g. `spike.py`, `qc.py`) and currently delegate to the frozen
+  legacy modules (`featureExtractor.py`, `patch_subthres.py`). Framework
+  internals (`AnalysisBase`, registry, result, runner) live in
+  `gigaseal/analysis/core/`.
 - `gigaseal/_legacy/readme.md` records the intent to move `featureExtractor.py`
   and `patch_subthres.py` into `_legacy/` at 1.0b.
 - **Consumers:** end users run the **GUI** — internal module paths do not affect
@@ -23,14 +26,14 @@ Owner action: author will handle actual code placement/moves.
 - **Single-analysis helpers live in the analysis's own module**, as module-level
   functions alongside the `AnalysisBase` subclass. Example: QC's
   `find_zero`, `find_baseline`, `compute_rms`, `compute_vm_drift`, `run_qc`
-  live in `analysis/builtins/qc.py` next to `QcAnalysis`.
+  live in `analysis/qc.py` next to `QcAnalysis`.
 - **Shared helpers** (used by >1 analysis) live in a neutral location, **not**
   duplicated:
   - cross-cutting sweep utilities → `gigaseal/patch_utils.py`
     (e.g. `crop_spikes`, `build_running_bin`);
-  - shared computation that is clearly "analysis core" → a new
-    `gigaseal/analysis/core/` subpackage (create only when the first genuinely
-    shared function appears — do not pre-create).
+  - shared computation that is clearly "analysis core" → the
+    `gigaseal/analysis/core/` subpackage, which already houses the framework
+    internals (`base`, `registry`, `result`, `runner`).
 - The `AnalysisBase.analyze()` body stays a **thin** call into these functions;
   do not inline computation into the class.
 
@@ -45,12 +48,12 @@ Owner action: author will handle actual code placement/moves.
 
 ## Constraints that still bind (mechanical, not stylistic)
 
-1. **No import-time circular imports.** `builtins/spike.py` imports
+1. **No import-time circular imports.** `analysis/spike.py` imports
    `featureExtractor` **lazily inside** `analyze()`; keep any legacy imports lazy
    so relocation never creates a cycle. Pure-numpy helpers (QC) are safe.
 2. **Pickling / multiprocessing.** `run_batch(n_jobs>1)` uses
-   `ProcessPoolExecutor`; everything in `analysis/builtins/*` must be importable
-   at module level (no closures) and picklable.
+   `ProcessPoolExecutor`; every built-in module under `analysis/` must be
+   importable at module level (no closures) and picklable.
 3. **IPFX import hygiene.** Never import IPFX (or other optional deps) at the top
    of `analysis/**`; import inside `analyze()` or guard it, so the framework
    imports without optional deps installed.
@@ -58,7 +61,7 @@ Owner action: author will handle actual code placement/moves.
 ## QC pilot (reference implementation for the other analyses)
 
 1. Move `find_zero`, `find_baseline`, `compute_rms`, `compute_vm_drift`,
-   `run_qc` from `gigaseal/QC.py` into `gigaseal/analysis/builtins/qc.py`
+   `run_qc` from `gigaseal/QC.py` into `gigaseal/analysis/qc.py`
    (module-level, above `QcAnalysis`).
 2. Fill `QcAnalysis.analyze()` to apply the optional `filter`, call
    `run_qc(realY=y, realC=c)`, and map the returned

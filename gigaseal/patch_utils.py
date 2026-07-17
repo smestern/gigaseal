@@ -1,3 +1,5 @@
+from turtle import pd
+
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -87,15 +89,50 @@ def crop_spikes(dataT, dataV, dataI, dv_cutoff=20.0, thresh_frac=0.2, pad=500):
         Copy of ``dataV`` with spike regions replaced by ``np.nan``. If no
         spikes are detected the array is returned unmodified.
     """
-    # TODO(human): port spike-cropping logic from the legacy crop_ap()
-    # functions in gigaseal/bin/run_rmp.py and run_QC.py. Use
-    # ipfx.feature_extractor.SpikeFeatureExtractor (import lazily), guard the
-    # empty-spike case, clamp indices to the trace length, and replace the
-    # deprecated ``np.int`` casts with ``int`` / ``np.int64``.
-    raise NotImplementedError(
-        "crop_spikes() body pending human authoring — consolidate the "
-        "crop_ap() helpers from run_rmp.py and run_QC.py."
-    )
+    
+    logger.info("Finding Spikes to be Removed")
+    
+    from ipfx import feature_extractor
+    spikext = feature_extractor.SpikeFeatureExtractor(filter=0, dv_cutoff=20, thresh_frac=0.2)
+    
+    dt = dataT[1] - dataT[0]
+    try:
+        spike_in_sweep = spikext.process(dataT, dataV, dataI)
+    except:
+        spike_in_sweep = pd.DataFrame()
+    sweep_indi = np.arange(0, dataV.shape[0])
+    if spike_in_sweep.empty == False:
+        #remove spikes
+        logger.info(f" === Found {spike_in_sweep.shape[0]} spikes === ")
+        ap_start_ = spike_in_sweep['threshold_index'].to_numpy() - 500 #Take 500 samples before threshold, maybe make this DT dependent?
+        ap_end_ = spike_in_sweep['trough_index'].to_numpy() + 500 #take 500 samples after trough, maybe make this DT dependent?
+        pairs = np.vstack((ap_start_, ap_end_)).T #pairs is a 2D array of start and end indices for each spike
+        pairs = np.nan_to_num(pairs, nan=len(dataT)) #this is a hack to deal with the fact that some spikes are detected at the end of the sweep and have a NaN for the end index. This will set the end index to the length of the sweep, which will be clipped later.
+        pairs = pairs.astype(np.int32) #casting for indexing
+
+        pair_data = []
+        for p in pairs:
+            if (p[1] - p[0])*dt > 0.1: #somtimes the spike detection will detect a spike that is longer than 100 ms, which is probably not a real spike.
+                # This is a hack to deal with that. If the spike is longer than 100 ms, we will clip the end index to be 100 ms after the start index.
+                logger.info(f" === Found a long spike at {dataT[p[0]]} === ")
+                p[1] = np.clip(p[1], p[0], p[0]+int(0.1/dt))
+            
+            #also enforce p[1] <= len()
+            p[1] = np.clip(p[1], p[0], len(dataT)-1).astype(np.int) #again, stop the end index from being longer than the length of the sweep, which can happen if the spike is detected at the end of the sweep.
+            temp = np.arange(p[0], p[1]).astype(np.int) #create an array of indices for the spike region
+            pair_data.append(temp.tolist()) #weird merging
+            logger.info(f" === cropping spike between {dataT[int(p[0])]} and {dataT[(p[1])]} === ")
+
+
+        pair_data = np.hstack(pair_data) #for efficiency, we will flatten the list of lists into a single array of indices
+        pair_data = pair_data[pair_data<dataV.shape[0]]
+        dataV[pair_data] = np.nan #nan out the spike region, its up to the user to decide how to handle this later, but this will allow for np.nanmean and other functions to ignore these values.
+        sweep_data = dataV
+
+    else:
+        sweep_data = dataV #no spikes found, return the original data  
+    return sweep_data
+
 
 
 def create_dir(fp):

@@ -41,7 +41,7 @@ onward, breaking any item below requires a major bump (`2.0.0`).
       semantics (`per_sweep` / `per_file`), `register()`, `run` / `run_batch`,
       `AnalysisResult` shape. No planned signature changes.
 - [ ] CLI surface frozen: `gigaseal` subcommands and their flags are stable.
-- [ ] Every builtin in `gigaseal/analysis/builtins/` has stable, documented parameters.
+- [ ] Every builtin under `gigaseal/analysis/` has stable, documented parameters.
 
 ### Dual-API resolution
 - [ ] Legacy `featureExtractor.py` / `patch_subthres.py` have a declared status

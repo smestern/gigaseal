@@ -12,7 +12,7 @@ A working backlog for high-ROI Copilot work on gigaseal, ordered by leverage. Th
 
 3. **Unify `bin/run_*.py` scripts behind a single argparse/click CLI.** Eight scripts with copy-pasted tkinter prompt blocks; collapse to `gigaseal <subcommand>` over the new `run_batch` API. Mechanical, repetitive, perfect Copilot work. Also makes future analyses one-line CLI-available.
 
-4. **Test scaffolding for every builtin.** Each module in `gigaseal/analysis/builtins/` should have a `Test<Class>` block in [tests/test_analysis_framework.py](tests/test_analysis_framework.py) covering: registered, synthetic sweep, demo ABF (skipif). The [`/add-analysis-module` skill](.github/skills/add-analysis-module/SKILL.md) sets the pattern — point Copilot at it and let it fill gaps for `SpikeAnalysis` and `SubthresholdAnalysis`.
+4. **Test scaffolding for every builtin.** Each built-in module under `gigaseal/analysis/` should have a `Test<Class>` block in [tests/test_analysis_framework.py](tests/test_analysis_framework.py) covering: registered, synthetic sweep, demo ABF (skipif). The [`/add-analysis-module` skill](.github/skills/add-analysis-module/SKILL.md) sets the pattern — point Copilot at it and let it fill gaps for `SpikeAnalysis` and `SubthresholdAnalysis`.
 
 ## Tier 3 — Hygiene
 

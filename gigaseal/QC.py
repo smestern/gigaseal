@@ -1,2 +1,2 @@
-from .analysis.builtins.qc import *  # noqa: F401,F403
+from .analysis.qc import *  # noqa: F401,F403
 #legacy monkey patch to allow the QC analysis to be run in the old framework, to be removed once the QC class is fully integrated into the analysis framework

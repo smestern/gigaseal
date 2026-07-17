@@ -10,7 +10,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from ..base import AnalysisBase
+from .core.base import AnalysisBase
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class LegacySpikeAnalysis(AnalysisBase):
         Returns a flat dict of spike features.  If no spikes are found,
         returns ``{"spike_count": 0}``.
         """
-        from ...featureExtractor import analyze
+        from ..featureExtractor import analyze
 
         # Build ipfx-compatible param_dict from our class attributes
         param_dict = {
@@ -180,7 +180,7 @@ class SpikeAnalysis(AnalysisBase):
         Returns a flat dict of spike features.  If no spikes are found,
         returns ``{"spike_count": 0}``.
         """
-        from ...featureExtractor import analyze_sweep
+        from ..featureExtractor import analyze_sweep
 
         # Build ipfx-compatible param_dict from our class attributes
         param_dict = {

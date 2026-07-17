@@ -21,7 +21,7 @@ Data flows through four layers. Always respect these boundaries:
 2. **Data container** ([gigaseal/dataset.py](gigaseal/dataset.py)) — `cellData` wraps loader output and is the canonical object passed between layers. Built from a file path *or* raw arrays.
 3. **Analysis** — two parallel pipelines coexist:
    - **Legacy functional API** in [gigaseal/featureExtractor.py](gigaseal/featureExtractor.py) (`analyze()`, `analyze_sweep()`, `batch_feature_extract()`) and [gigaseal/patch_subthres.py](gigaseal/patch_subthres.py). Still actively used by GUI and bin scripts; **do not modify the public signatures**.
-   - **New modular framework** in [gigaseal/analysis/](gigaseal/analysis/) — `AnalysisBase` + `register()` + `run_batch()`. Built-in wrappers in [gigaseal/analysis/builtins/](gigaseal/analysis/builtins/) delegate to the legacy functions. New analyses go here.
+   - **New modular framework** in [gigaseal/analysis/](gigaseal/analysis/) — `AnalysisBase` + `register()` + `run_batch()`. Framework internals live in [gigaseal/analysis/core/](gigaseal/analysis/core/); built-in analysis modules sit directly under [gigaseal/analysis/](gigaseal/analysis/) (e.g. `spike.py`, `subthreshold.py`) and delegate to the legacy functions. New analyses go here.
 4. **Consumers** — GUI ([gigaseal/gui/](gigaseal/gui/)), web viz ([gigaseal/webViz/](gigaseal/webViz/)), database builder ([gigaseal/database/build_database.py](gigaseal/database/build_database.py)), and CLI entry points in [gigaseal/bin/](gigaseal/bin/).
 
 ```
@@ -58,7 +58,7 @@ ABF/NWB file → loadFile → cellData → {legacy featureExtractor | analysis.A
 | Batch CLI | [bin/run_spike_finder_cli.py](gigaseal/bin/run_spike_finder_cli.py) | tkinter prompts → `featureExtractor.batch_feature_extract` → `save_data_frames`. |
 | Database build | [database/build_database.py](gigaseal/database/build_database.py) | Folder of ABF/NWB → IPFX feature collection → CSV/JSON for web viz. |
 | Web visualization | [webViz/run_web_viz.py](gigaseal/webViz/run_web_viz.py) | Auto-calls `build_database` if no DB given → `ephysDatabaseViewer.main` (static or dynamic Flask). |
-| New custom analysis | subclass `AnalysisBase` → `register()` → `run_batch(module, folder)` → `save_results`. Reference: [analysis/builtins/example.py](gigaseal/analysis/builtins/example.py). |
+| New custom analysis | subclass `AnalysisBase` → `register()` → `run_batch(module, folder)` → `save_results`. Reference: [analysis/example.py](gigaseal/analysis/example.py). |
 
 ## Gotchas
 

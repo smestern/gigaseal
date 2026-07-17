@@ -55,20 +55,20 @@ def _make_fake_data_2d(n_sweeps=3, n_points=10000, dt=1e-4):
 
 class TestAnalysisResult:
     def test_basic_creation(self):
-        from gigaseal.analysis.result import AnalysisResult
+        from gigaseal.analysis.core.result import AnalysisResult
         r = AnalysisResult(name="test", file_path="foo.abf")
         assert r.success is True
         assert r.name == "test"
 
     def test_add_error_marks_failure(self):
-        from gigaseal.analysis.result import AnalysisResult
+        from gigaseal.analysis.core.result import AnalysisResult
         r = AnalysisResult(name="test")
         r.add_error("something broke")
         assert r.success is False
         assert "something broke" in r.errors
 
     def test_to_dataframe_single(self):
-        from gigaseal.analysis.result import AnalysisResult
+        from gigaseal.analysis.core.result import AnalysisResult
         r = AnalysisResult(name="test", data={"peak": 42, "width": 1.5})
         df = r.to_dataframe()
         assert isinstance(df, pd.DataFrame)
@@ -76,7 +76,7 @@ class TestAnalysisResult:
         assert df["peak"].iloc[0] == 42
 
     def test_to_dataframe_sweep_results(self):
-        from gigaseal.analysis.result import AnalysisResult
+        from gigaseal.analysis.core.result import AnalysisResult
         r = AnalysisResult(name="test", file_path="f.abf", data={"cell_id": "A"},
                            sweep_results=[{"v": -70}, {"v": -65}, {"v": -60}])
         df = r.to_dataframe()
@@ -86,7 +86,7 @@ class TestAnalysisResult:
         assert all(df["cell_id"] == "A")
 
     def test_concatenate(self):
-        from gigaseal.analysis.result import AnalysisResult
+        from gigaseal.analysis.core.result import AnalysisResult
         r1 = AnalysisResult(name="t", file_path="a.abf", data={"x": 1})
         r2 = AnalysisResult(name="t", file_path="b.abf", data={"x": 2})
         combined = AnalysisResult.concatenate([r1, r2])
@@ -95,7 +95,7 @@ class TestAnalysisResult:
         assert set(df["file"]) == {"a.abf", "b.abf"}
 
     def test_concatenate_empty(self):
-        from gigaseal.analysis.result import AnalysisResult
+        from gigaseal.analysis.core.result import AnalysisResult
         combined = AnalysisResult.concatenate([])
         assert combined.success is False
 
@@ -107,7 +107,7 @@ class TestAnalysisResult:
 class TestSummarySheets:
     def _make_batch_result(self):
         """Combined result mimicking a per-sweep spike batch over 2 files."""
-        from gigaseal.analysis.result import AnalysisResult
+        from gigaseal.analysis.core.result import AnalysisResult
         r1 = AnalysisResult(
             name="spike", file_path="a.abf",
             sweep_results=[
@@ -152,7 +152,7 @@ class TestSummarySheets:
         assert summary.loc["b.abf", "total_spike_count"] == 0
 
     def test_summary_empty_result(self):
-        from gigaseal.analysis.result import AnalysisResult
+        from gigaseal.analysis.core.result import AnalysisResult
         # A batch where the only file failed -> combined raw frame is empty.
         failed = AnalysisResult(name="spike", file_path="a.abf")
         failed.add_error("boom")
@@ -168,7 +168,7 @@ class TestSummarySheets:
         assert len(sheets["Summary"]) == 2
 
     def test_to_sheets_respects_module_override(self):
-        from gigaseal.analysis.result import AnalysisResult
+        from gigaseal.analysis.core.result import AnalysisResult
         custom = pd.DataFrame({"x": [1, 2]})
         r = AnalysisResult(name="t", data={"v": 1}, sheets={"Custom": custom})
         sheets = r.to_sheets()
@@ -176,7 +176,7 @@ class TestSummarySheets:
         assert "Summary" in sheets and "Raw" in sheets
 
     def test_save_results_multi_sheet_xlsx(self, tmp_path):
-        from gigaseal.analysis.runner import save_results
+        from gigaseal.analysis.core.runner import save_results
         combined = self._make_batch_result()
         # fmt="csv" should be promoted to xlsx because there are >1 sheets
         path = save_results(combined, str(tmp_path), tag="t1", fmt="csv")
@@ -193,7 +193,7 @@ class TestSummarySheets:
 class TestSummarySpec:
     def _make_spec_batch(self, spec):
         """Combined per-sweep result over 2 files carrying *spec*."""
-        from gigaseal.analysis.result import AnalysisResult
+        from gigaseal.analysis.core.result import AnalysisResult
         r1 = AnalysisResult(
             name="spike", file_path="a.abf", summary_spec=spec,
             sweep_results=[
@@ -212,13 +212,13 @@ class TestSummarySpec:
         return AnalysisResult.concatenate([r1, r2])
 
     def test_spec_propagates_through_concatenate(self):
-        from gigaseal.analysis.result import SummarySpec
+        from gigaseal.analysis.core.result import SummarySpec
         spec = SummarySpec(list_reducer="mean")
         combined = self._make_spec_batch(spec)
         assert combined.summary_spec is spec
 
     def test_list_reducer_makes_per_spike_features_averageable(self):
-        from gigaseal.analysis.result import SummarySpec
+        from gigaseal.analysis.core.result import SummarySpec
         spec = SummarySpec(list_reducer="mean")
         summary = self._make_spec_batch(spec).summary_dataframe().set_index("file")
         # a.abf: sweep means = mean(40,20)=30 and mean(50,30,10,0)=22.5
@@ -228,7 +228,7 @@ class TestSummarySpec:
         assert np.isnan(summary.loc["b.abf", "peak_v"])
 
     def test_summary_exclude_globs(self):
-        from gigaseal.analysis.result import SummarySpec
+        from gigaseal.analysis.core.result import SummarySpec
         spec = SummarySpec(list_reducer="mean",
                            summary_exclude=["*_t", "*_index"])
         summary = self._make_spec_batch(spec).summary_dataframe()
@@ -237,21 +237,21 @@ class TestSummarySpec:
         assert "peak_v" in summary.columns
 
     def test_aggregation_reducer_override(self):
-        from gigaseal.analysis.result import SummarySpec
+        from gigaseal.analysis.core.result import SummarySpec
         spec = SummarySpec(aggregations={"spike_count": "sum"})
         summary = self._make_spec_batch(spec).summary_dataframe().set_index("file")
         # spike_count summed instead of meaned: a.abf = 2 + 4 = 6
         assert summary.loc["a.abf", "spike_count"] == 6
 
     def test_per_sweep_pivot_generic_labels(self):
-        from gigaseal.analysis.result import SummarySpec
+        from gigaseal.analysis.core.result import SummarySpec
         spec = SummarySpec(per_sweep_columns=["spike_count"])
         summary = self._make_spec_batch(spec).summary_dataframe().set_index("file")
         assert summary.loc["a.abf", "Sweep 000 spike_count"] == 2
         assert summary.loc["a.abf", "Sweep 001 spike_count"] == 4
 
     def test_per_sweep_pivot_legacy_template(self):
-        from gigaseal.analysis.result import SummarySpec
+        from gigaseal.analysis.core.result import SummarySpec
         spec = SummarySpec(
             per_sweep_columns={"spike_count": "Sweep {n:03d} spike count"})
         summary = self._make_spec_batch(spec).summary_dataframe().set_index("file")
@@ -267,7 +267,7 @@ class TestSummarySpec:
         assert "*_t" in spec.summary_exclude
 
     def test_first_spike_takes_first_of_first_firing_sweep(self):
-        from gigaseal.analysis.result import SummarySpec, FirstSpikeSpec
+        from gigaseal.analysis.core.result import SummarySpec, FirstSpikeSpec
         # a.abf: sweep 0 already fires -> rheobase = sweep 0, spike 0.
         spec = SummarySpec(
             first_spike=FirstSpikeSpec(columns={"peak_v": "rheobase_peak"}))
@@ -276,7 +276,7 @@ class TestSummarySpec:
         assert summary.loc["a.abf", "rheobase_peak"] == pytest.approx(40.0)
 
     def test_first_spike_scalar_column(self):
-        from gigaseal.analysis.result import AnalysisResult, SummarySpec, FirstSpikeSpec
+        from gigaseal.analysis.core.result import AnalysisResult, SummarySpec, FirstSpikeSpec
         # train_latency is a per-sweep scalar, not a list -> taken as-is.
         r = AnalysisResult(
             name="spike", file_path="a.abf",
@@ -293,7 +293,7 @@ class TestSummarySpec:
         assert summary.loc["a.abf", "rheobase_latency"] == pytest.approx(0.05)
 
     def test_first_spike_no_spikes_absent_or_nan(self):
-        from gigaseal.analysis.result import SummarySpec, FirstSpikeSpec
+        from gigaseal.analysis.core.result import SummarySpec, FirstSpikeSpec
         spec = SummarySpec(
             first_spike=FirstSpikeSpec(columns={"peak_v": "rheobase_peak"}))
         summary = self._make_spec_batch(spec).summary_dataframe().set_index("file")
@@ -301,7 +301,7 @@ class TestSummarySpec:
         assert np.isnan(summary.loc["b.abf", "rheobase_peak"])
 
     def test_first_spike_list_form_uses_prefix(self):
-        from gigaseal.analysis.result import SummarySpec, FirstSpikeSpec
+        from gigaseal.analysis.core.result import SummarySpec, FirstSpikeSpec
         spec = SummarySpec(
             first_spike=FirstSpikeSpec(columns=["peak_v"], prefix="rheo_"))
         summary = self._make_spec_batch(spec).summary_dataframe().set_index("file")
@@ -329,7 +329,7 @@ class TestSummarySpec:
 
 class TestAnalysisBase:
     def _make_simple_module(self):
-        from gigaseal.analysis.base import AnalysisBase
+        from gigaseal.analysis.core.base import AnalysisBase
 
         class SimpleModule(AnalysisBase):
             name = "simple"
@@ -370,7 +370,7 @@ class TestAnalysisBase:
         assert d == {"threshold": -30.0, "window_ms": 5}
 
     def test_auto_name(self):
-        from gigaseal.analysis.base import AnalysisBase
+        from gigaseal.analysis.core.base import AnalysisBase
 
         class MyFancyAnalysis(AnalysisBase):
             def analyze(self, x, y, c, **kwargs):
@@ -391,7 +391,7 @@ class TestAnalysisBase:
             assert sr["max_v"] == pytest.approx(-70.0)
 
     def test_run_per_file_mode(self):
-        from gigaseal.analysis.base import AnalysisBase
+        from gigaseal.analysis.core.base import AnalysisBase
 
         class FileMode(AnalysisBase):
             name = "filemode"
@@ -409,7 +409,7 @@ class TestAnalysisBase:
         assert result.data["mean_v"] == pytest.approx(-70.0)
 
     def test_run_handles_exceptions(self):
-        from gigaseal.analysis.base import AnalysisBase
+        from gigaseal.analysis.core.base import AnalysisBase
 
         class Crasher(AnalysisBase):
             name = "crasher"
@@ -443,8 +443,8 @@ class TestAnalysisBase:
 
 class TestRegistry:
     def test_register_and_get(self):
-        from gigaseal.analysis.registry import register, get, clear
-        from gigaseal.analysis.base import AnalysisBase
+        from gigaseal.analysis.core.registry import register, get, clear
+        from gigaseal.analysis.core.base import AnalysisBase
 
         class Dummy(AnalysisBase):
             name = "test_dummy"
@@ -458,7 +458,7 @@ class TestRegistry:
         assert m.name == "test_dummy"
 
     def test_list_modules(self):
-        from gigaseal.analysis.registry import list_modules
+        from gigaseal.analysis.core.registry import list_modules
         names = list_modules()
         assert isinstance(names, list)
         # Built-ins should be registered by default
@@ -467,8 +467,8 @@ class TestRegistry:
         assert "peak_detector" in names
 
     def test_register_with_overrides(self):
-        from gigaseal.analysis.registry import register, get
-        from gigaseal.analysis.base import AnalysisBase
+        from gigaseal.analysis.core.registry import register, get
+        from gigaseal.analysis.core.base import AnalysisBase
 
         class ParamTest(AnalysisBase):
             name = "param_test_reg"
@@ -582,28 +582,28 @@ class TestMigratedModules:
         assert get("growth_factor") is not None
 
     def test_growth_factor_hidden(self):
-        from gigaseal.analysis.builtins.growth_factor import GrowthFactorAnalysis
+        from gigaseal.analysis.growth_factor import GrowthFactorAnalysis
         assert GrowthFactorAnalysis.hidden is True
 
     def test_qc_parameters(self):
-        from gigaseal.analysis.builtins.qc import QcAnalysis
+        from gigaseal.analysis.qc import QcAnalysis
         assert set(QcAnalysis().get_parameters()) == {"filter"}
 
     def test_rmp_parameters(self):
-        from gigaseal.analysis.builtins.rmp import RmpAnalysis
+        from gigaseal.analysis.rmp import RmpAnalysis
         assert set(RmpAnalysis().get_parameters()) == {
             "window", "bin_time", "crop_spikes", "filter",
         }
 
     def test_membrane_fit_parameters(self):
-        from gigaseal.analysis.builtins.membrane_fit import MembraneAnalysis
+        from gigaseal.analysis.membrane_fit import MembraneAnalysis
         assert set(MembraneAnalysis().get_parameters()) == {
             "filter", "savgol_filter", "time_after",
             "start_search", "end_search", "subthreshold_sweeps",
         }
 
     def test_membrane_fit_is_per_file(self):
-        from gigaseal.analysis.builtins.membrane_fit import MembraneAnalysis
+        from gigaseal.analysis.membrane_fit import MembraneAnalysis
         assert MembraneAnalysis.sweep_mode == "per_file"
 
     @pytest.mark.parametrize("module_name", ["rmp", "membrane_fit", "growth_factor"])
@@ -627,7 +627,7 @@ class TestMigratedModules:
 
     def test_qc_analyze_synthetic(self):
         """QcAnalysis is implemented — returns a flat dict of metrics."""
-        from gigaseal.analysis.builtins.qc import QcAnalysis
+        from gigaseal.analysis.qc import QcAnalysis
         x, y, c = _make_fake_data_2d()
         out = QcAnalysis().analyze(x, y, c)
         assert isinstance(out, dict)
@@ -635,7 +635,7 @@ class TestMigratedModules:
 
     def test_run_qc_wrapper_contract(self):
         """Legacy run_qc wrapper returns the 4-item list featureExtractor expects."""
-        from gigaseal.analysis.builtins.qc import run_qc
+        from gigaseal.analysis.qc import run_qc
         _, y, c = _make_fake_data_2d()
         result = run_qc(y, c)
         assert len(result) == 4

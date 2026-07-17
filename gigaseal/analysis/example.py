@@ -6,7 +6,7 @@ Copy this file and modify ``analyze()`` to create your own analysis.
 
 import numpy as np
 
-from ..base import AnalysisBase
+from .core.base import AnalysisBase
 
 
 class PeakDetector(AnalysisBase):
@@ -21,7 +21,7 @@ class PeakDetector(AnalysisBase):
     ::
 
         from gigaseal.analysis import register
-        from gigaseal.analysis.builtins.example import PeakDetector
+        from gigaseal.analysis.example import PeakDetector
 
         # Register so it's available by name
         register(PeakDetector)

@@ -25,54 +25,7 @@ files = filedialog.askdirectory(
                                    )
 root_fold = files
 
-def crop_ap(abf):
-    print("Finding Spikes to be Removed")
-    spikext = feature_extractor.SpikeFeatureExtractor(filter=0, dv_cutoff=20, thresh_frac=0.2)
-    dataT, dataV, dataI = abf.sweepX, np.copy(abf.sweepY), np.copy(abf.sweepC)
-    dt = dataT[1] - dataT[0]
-    try:
-        spike_in_sweep = spikext.process(dataT, dataV, dataI)
-    except:
-        spike_in_sweep = pd.DataFrame()
-    sweep_indi = np.arange(0, dataV.shape[0])
-    if spike_in_sweep.empty == False:
-        #remove spikes
-        print(f" === Found {spike_in_sweep.shape[0]} spikes === ")
-        ap_start_ = spike_in_sweep['threshold_index'].to_numpy() - 500
-        ap_end_ = spike_in_sweep['trough_index'].to_numpy() + 500
-        pairs = np.vstack((ap_start_, ap_end_)).T
-        pairs = np.nan_to_num(pairs, nan=len(dataT))
-        pairs = pairs.astype(np.int)
-        pair_data = []
-        for p in pairs:
-            if (p[1] - p[0])*dt > 0.1:
-                print(f" === Found a long spike at {dataT[p[0]]} === ")
-                p[1] = np.clip(p[1], p[0], p[0]+int(0.1/dt))
-            
-            #also enforce p[1] <= len()
-            p[1] = np.clip(p[1], p[0], len(dataT)-1).astype(np.int)
-            temp = np.arange(p[0], p[1]).astype(np.int)
-            pair_data.append(temp.tolist())
-            print(f" === cropping spike between {dataT[int(p[0])]} and {dataT[(p[1])]} === ")
-        pair_data = np.hstack(pair_data)
-        pair_data = pair_data[pair_data<dataV.shape[0]]
-        dataV[pair_data] = np.nan
-        sweep_data = dataV
 
-
-        #debug plot
-        if False:
-            plt.plot(abf.sweepX, abf.sweepY, 'k')
-            plt.plot(abf.sweepX, sweep_data, 'r')
-            plt.scatter(abf.sweepX[pairs[:,0]], abf.sweepY[pairs[:,0]], c='g', s=100)
-            plt.scatter(abf.sweepX[pairs[:,1]], abf.sweepY[pairs[:,1]], c='b', s=100)
-            plt.show()
-    else:
-        sweep_data = abf.sweepY
-    
-    
-        
-    return sweep_data
 
 def running_bin(x, y, bin_time):
     bin_x = np.arange(x[0], x[-1]+bin_time, step=bin_time)

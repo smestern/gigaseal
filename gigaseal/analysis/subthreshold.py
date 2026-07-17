@@ -8,7 +8,7 @@ deflection) from hyperpolarizing sweeps.
 import logging
 import numpy as np
 
-from ..base import AnalysisBase
+from .core.base import AnalysisBase
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class SubthresholdAnalysis(AnalysisBase):
             Values are ``np.nan`` if the sweep has no hyperpolarizing
             current or the fit fails.
         """
-        from ...patch_subthres import subthres_a
+        from ..patch_subthres import subthres_a
 
         end = self.end if self.end > 0 else x[-1]
         sag, taum, voltage_deflection = subthres_a(x, y, c, self.start, end)

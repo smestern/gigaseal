@@ -20,16 +20,15 @@ The `gigaseal.analysis` submodule was rebuilt from scratch to be **simple, modul
 
 | File | Purpose |
 |------|---------|
-| `gigaseal/analysis/result.py` | `AnalysisResult` dataclass — lightweight result container with `to_dataframe()` and `concatenate()` |
-| `gigaseal/analysis/base.py` | `AnalysisBase` — the single base class; handles input normalization, sweep iteration, parameter introspection |
-| `gigaseal/analysis/registry.py` | `register()`, `get()`, `list_modules()`, `get_all()`, `clear()` — flat module registry |
-| `gigaseal/analysis/runner.py` | `run_batch()`, `save_results()` — batch processing with optional `ProcessPoolExecutor` and `progress_callback` |
+| `gigaseal/analysis/core/result.py` | `AnalysisResult` dataclass — lightweight result container with `to_dataframe()` and `concatenate()` |
+| `gigaseal/analysis/core/base.py` | `AnalysisBase` — the single base class; handles input normalization, sweep iteration, parameter introspection |
+| `gigaseal/analysis/core/registry.py` | `register()`, `get()`, `list_modules()`, `get_all()`, `clear()` — flat module registry |
+| `gigaseal/analysis/core/runner.py` | `run_batch()`, `save_results()` — batch processing with optional `ProcessPoolExecutor` and `progress_callback` |
 | `gigaseal/analysis/analysis_configs.json` | Parameter presets (`spike_analysis_standard`, `spike_analysis_sensitive`, `subthreshold_standard`, `subthreshold_detailed`) |
-| `gigaseal/analysis/builtins/__init__.py` | Auto-registers built-in modules on import |
-| `gigaseal/analysis/builtins/spike.py` | `SpikeAnalysis` (per-sweep, wraps `featureExtractor.analyze_sweep()`) and `LegacySpikeAnalysis` (per-file, wraps legacy `featureExtractor.analyze()`) |
-| `gigaseal/analysis/builtins/subthreshold.py` | `SubthresholdAnalysis` — wraps `patch_subthres.subthres_a()` |
-| `gigaseal/analysis/builtins/example.py` | `PeakDetector` — minimal example for new users (~10 lines of user code); demo only, not auto-registered |
-| `gigaseal/analysis/__init__.py` | Public API exports + backward-compatible shims for GUI (see below) |
+| `gigaseal/analysis/spike.py` | `SpikeAnalysis` (per-sweep, wraps `featureExtractor.analyze_sweep()`) and `LegacySpikeAnalysis` (per-file, wraps legacy `featureExtractor.analyze()`) |
+| `gigaseal/analysis/subthreshold.py` | `SubthresholdAnalysis` — wraps `patch_subthres.subthres_a()` |
+| `gigaseal/analysis/example.py` | `PeakDetector` — minimal example for new users (~10 lines of user code); demo only, hidden from the GUI |
+| `gigaseal/analysis/__init__.py` | Public API exports, built-in registration, and backward-compatible shims for GUI (see below) |
 | `tests/test_analysis_framework.py` | 26 tests covering results, base class, registry, demo data integration (incl. `LegacySpikeAnalysis`), and legacy imports |
 
 ### Old Files Removed
@@ -207,7 +206,7 @@ def _run_individual_modular(self, module, abf_data, selected_sweeps):
 
 #### 1d. Add Progress Callback Support to Framework
 
-`run_batch()` in `gigaseal/analysis/runner.py` already accepts a `progress_callback` argument. `AnalysisBase.run()` and `_run_per_sweep()` do **not** — single-file per-sweep progress reporting from the GUI is still blocked. Add an optional `progress_callback` parameter to `AnalysisBase.run()` and `_run_per_sweep()`:
+`run_batch()` in `gigaseal/analysis/core/runner.py` already accepts a `progress_callback` argument. `AnalysisBase.run()` and `_run_per_sweep()` do **not** — single-file per-sweep progress reporting from the GUI is still blocked. Add an optional `progress_callback` parameter to `AnalysisBase.run()` and `_run_per_sweep()`:
 
 ```python
 # In base.py, _run_per_sweep():

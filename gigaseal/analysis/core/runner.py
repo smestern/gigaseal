@@ -213,7 +213,7 @@ def _run_one(module, filepath, selected_sweeps, extra_kwargs):
 
 def _filter_by_protocol(filelist, protocol_filter):
     """Keep only files whose protocol matches the filter substring."""
-    from ..dataset import cellData
+    from ...dataset import cellData
 
     filtered = []
     pf_lower = protocol_filter.lower()

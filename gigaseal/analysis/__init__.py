@@ -41,26 +41,42 @@ Public API
 - ``save_results``   — save an AnalysisResult to CSV/Excel
 """
 
-from .base import AnalysisBase
-from .result import AnalysisResult, SummarySpec, FirstSpikeSpec
-from .registry import register, get, list_modules, get_all, clear
-from .runner import run_batch, save_results
-
-# Auto-register built-in modules on import
-from . import builtins  # noqa: F401
-
-# Re-export the concrete built-in analysis classes so they can be imported
-# directly, e.g. ``from gigaseal.analysis import SpikeAnalysis``.
-from .builtins import (
-    SpikeAnalysis,
-    LegacySpikeAnalysis,
-    SubthresholdAnalysis,
-    PeakDetector,
-    QcAnalysis,
-    RmpAnalysis,
-    MembraneAnalysis,
-    GrowthFactorAnalysis,
+from .core import (
+    AnalysisBase,
+    AnalysisResult,
+    SummarySpec,
+    FirstSpikeSpec,
+    register,
+    get,
+    list_modules,
+    get_all,
+    clear,
+    run_batch,
+    save_results,
 )
+
+# Import the concrete analysis modules so they can be re-exported directly,
+# e.g. ``from gigaseal.analysis import SpikeAnalysis``.
+from .spike import SpikeAnalysis, LegacySpikeAnalysis
+from .subthreshold import SubthresholdAnalysis
+from .example import PeakDetector
+from .qc import QcAnalysis
+from .rmp import RmpAnalysis
+from .membrane_fit import MembraneAnalysis
+from .growth_factor import GrowthFactorAnalysis
+
+# Register the built-in modules with the global registry on import.
+register(SpikeAnalysis)
+register(SubthresholdAnalysis)
+register(LegacySpikeAnalysis)
+register(QcAnalysis)
+register(RmpAnalysis)
+register(MembraneAnalysis)
+register(GrowthFactorAnalysis)
+# PeakDetector is a demo module (hidden=True): registered so it is reachable by
+# name, but it never surfaces in the end-user GUI.
+register(PeakDetector)
+
 
 __all__ = [
     "AnalysisBase",

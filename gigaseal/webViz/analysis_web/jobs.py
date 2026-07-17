@@ -182,7 +182,7 @@ class JobManager:
         # Local imports keep test-time import light and avoid pulling
         # IPFX during app construction.
         from gigaseal.analysis import get as get_module, run_batch
-        from gigaseal.analysis.result import AnalysisResult
+        from gigaseal.analysis import AnalysisResult
 
         job.status = "running"
         job.started_at = time.time()

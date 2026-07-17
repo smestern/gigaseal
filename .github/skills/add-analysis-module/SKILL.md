@@ -1,11 +1,11 @@
 ---
 name: add-analysis-module
-description: "Scaffold a new electrophysiology analysis module for gigaseal: create an AnalysisBase subclass in gigaseal/analysis/builtins/, auto-register it, and add a mirroring test. Use when the user asks to add a custom analysis, new feature extractor, new metric, or any pipeline that processes ABF/NWB sweeps through the modular framework."
+description: "Scaffold a new electrophysiology analysis module for gigaseal: create an AnalysisBase subclass in gigaseal/analysis/, auto-register it, and add a mirroring test. Use when the user asks to add a custom analysis, new feature extractor, new metric, or any pipeline that processes ABF/NWB sweeps through the modular framework."
 ---
 
 # Add Analysis Module
 
-Scaffolds a new `AnalysisBase` subclass following the conventions in [analysis-framework.instructions.md](../../instructions/analysis-framework.instructions.md). Reference: [ANALYSIS_REFACTOR.md](../../../ANALYSIS_REFACTOR.md), example: [gigaseal/analysis/builtins/example.py](../../../gigaseal/analysis/builtins/example.py).
+Scaffolds a new `AnalysisBase` subclass following the conventions in [analysis-framework.instructions.md](../../instructions/analysis-framework.instructions.md). Reference: [ANALYSIS_REFACTOR.md](../../../ANALYSIS_REFACTOR.md), example: [gigaseal/analysis/example.py](../../../gigaseal/analysis/example.py).
 
 ## When to use
 
@@ -34,7 +34,7 @@ Ask the user (use the ask-questions tool if available):
 
 ### 2. Create the module file
 
-Path: `gigaseal/analysis/builtins/<module_name>.py`
+Path: `gigaseal/analysis/<module_name>.py`
 
 Template:
 
@@ -42,7 +42,7 @@ Template:
 """<one-line purpose>."""
 
 import numpy as np
-from ..base import AnalysisBase
+from .core.base import AnalysisBase
 
 
 class <ClassName>(AnalysisBase):
@@ -65,18 +65,17 @@ If wrapping a legacy function, import inside `analyze()` to avoid forcing IPFX o
 
 ```python
 def analyze(self, x, y, c, **kwargs):
-    from ...featureExtractor import analyze_sweep
+    from ..featureExtractor import analyze_sweep
     spikes, train = analyze_sweep(x, y, c, param_dict=self._collect_param_dict())
     return {"spike_count": len(spikes), "first_isi": float(train["isi"].iloc[0]) if len(train) else np.nan}
 ```
 
 ### 3. Auto-register
 
-Edit [gigaseal/analysis/builtins/__init__.py](../../../gigaseal/analysis/builtins/__init__.py) and add:
+Edit [gigaseal/analysis/__init__.py](../../../gigaseal/analysis/__init__.py) and add an import plus a `register()` call alongside the other built-ins:
 
 ```python
 from .<module_name> import <ClassName>
-from ..registry import register
 register(<ClassName>)
 ```
 
@@ -93,7 +92,7 @@ class Test<ClassName>:
         assert get("<module_name>") is not None
 
     def test_run_synthetic(self):
-        from gigaseal.analysis.builtins.<module_name> import <ClassName>
+        from gigaseal.analysis.<module_name> import <ClassName>
         x, y, c = _make_fake_sweep(spike=True)  # helper at top of test file
         result = <ClassName>().run(x=x, y=y, c=c)
         df = result.to_dataframe()
@@ -101,7 +100,7 @@ class Test<ClassName>:
 
     @pytest.mark.skipif(not HAS_DEMO_DATA, reason="demo data not present")
     def test_run_demo_file(self):
-        from gigaseal.analysis.builtins.<module_name> import <ClassName>
+        from gigaseal.analysis.<module_name> import <ClassName>
         result = <ClassName>().run(file=DEMO_ABF_1)
         assert result.success
 ```
