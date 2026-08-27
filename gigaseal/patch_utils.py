@@ -343,7 +343,19 @@ def create_dir(fp):
     return fp
 
 
-def df_select_by_col(df, string_to_find): #fuzzy search for columns in a dataframe
+def df_select_by_col(df, string_to_find):
+    def flatten_stf(lis):
+        for item in lis:
+            if isinstance(item, list):
+                for subitem in flatten_stf(item):
+                    yield subitem
+            elif isinstance(item, dict):
+                for subitem in flatten_stf(item.values()):
+                    yield subitem
+            else:
+                yield item
+    string_to_find = list(flatten_stf(string_to_find))
+    #flatten the string to find (should be a lsit of strings, but some are dicts)
     columns = df.columns.values
     out = []
     for col in columns:

@@ -9,47 +9,52 @@ import numpy as np
 DEBUG = True
 
 
-def debug_wrap(func, returns=None):
+def debug_wrap(func=None, returns=None):
     """
     Decorator that wraps functions in try-except when DEBUG=False.
     When DEBUG=True, exceptions are raised normally for easier debugging.
-    Automatically returns appropriate number of np.nan values based on function signature.
+    On failure it returns np.nan values shaped to match the function's return.
+
+    Usage:
+        @debug_wrap                     # infer shape from the return type hint
+        @debug_wrap(returns=3)          # force a 3-tuple of np.nan
+        @debug_wrap(returns=(0, 0))     # force a 2-tuple of np.nan
     """
+    # Support both @debug_wrap and @debug_wrap(returns=...) forms.
+    if func is None:
+        return functools.partial(debug_wrap, returns=returns)
+
+    def make_nan_from_typehint(typehint):
+        if hasattr(typehint, '__origin__') and typehint.__origin__ is tuple:
+            args = typehint.__args__
+            if Ellipsis in args:
+                return np.nan
+            return tuple(make_nan_from_typehint(arg) for arg in args)
+        return np.nan
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         if DEBUG:
             # Debug mode: let exceptions propagate for full traceback
             return func(*args, **kwargs)
-        else:
-            # Production mode: catch exceptions and return np.nan
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                # Determine number of return values from type hints or docstring
-                if returns is not None:
-                    if isinstance(returns, int):
-                        n_returns = returns
-                    elif isinstance(returns, tuple) or isinstance(returns, list):
-                        return tuple(np.nan for _ in returns)
-                sig = inspect.signature(func)
-                return_annotation = sig.return_annotation
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            print(f"Warning: {func.__name__} failed with {type(e).__name__}: {e}")
 
-                # Check if return type hint indicates tuple, including nested tuples
-                def make_nan_from_typehint(typehint):
-                    # Recursively build tuple of np.nan matching the structure of typehint
-                    if hasattr(typehint, '__origin__') and typehint.__origin__ is tuple:
-                        return tuple(make_nan_from_typehint(arg) for arg in typehint.__args__)
-                    else:
-                        return np.nan
+            # Explicit override wins over the type hint.
+            if returns is not None:
+                if isinstance(returns, int):
+                    return tuple(np.nan for _ in range(returns))
+                if isinstance(returns, (tuple, list)):
+                    return tuple(np.nan for _ in returns)
 
-                if hasattr(return_annotation, '__origin__'):
-                    if return_annotation.__origin__ is tuple:
-                        return make_nan_from_typehint(return_annotation)
+            return_annotation = inspect.signature(func).return_annotation
+            if getattr(return_annotation, '__origin__', None) is tuple:
+                return make_nan_from_typehint(return_annotation)
 
-                # Default: single np.nan
-                print(
-                    f"Warning: {func.__name__} failed with {type(e).__name__}: {e}")
-                return np.nan
+            # if all else fails here is a single nan
+            return np.nan
     return wrapper
 
 

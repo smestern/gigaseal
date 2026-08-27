@@ -12,12 +12,9 @@ from scipy.optimize import curve_fit
 from scipy.stats import mode
 from ipfx import subthresh_features as subt
 from ipfx import feature_extractor as fx
-from . import patch_utils
 from . import utils
 import pyabf
 from . import loadFile
-#from brian2.units import ohm, Gohm, amp, volt, mV, second, pA
-
 
 ##Declare our options at default
 def exp_grow(t, a, b, alpha):
@@ -262,27 +259,6 @@ def exp_decay_factor_alt(dataT,dataV,dataI, time_aft, abf_id='abf', plot=False, 
     slow = np.max([tau1, tau2])
     return tau1, tau2, curve, r_squared_2p, r_squared_1p, tau_1p
 
-def df_select_by_col(df, string_to_find):
-    def flatten_stf(lis):
-        for item in lis:
-            if isinstance(item, list):
-                for subitem in flatten_stf(item):
-                    yield subitem
-            elif isinstance(item, dict):
-                for subitem in flatten_stf(item.values()):
-                    yield subitem
-            else:
-                yield item
-    string_to_find = list(flatten_stf(string_to_find))
-    #flatten the string to find (should be a lsit of strings, but some are dicts)
-    columns = df.columns.values
-    out = []
-    for col in columns:
-        string_found = [x in col for x in string_to_find]
-        if np.any(string_found):
-            out.append(col)
-    return df[out]
-
 
 @utils.debug_wrap
 def compute_sag(dataT,dataV,dataI, time_aft, plot=False, clear=True) -> tuple[float, float]:
@@ -360,6 +336,8 @@ def mem_cap(resist, tau_2p, tau_1p=np.nan):
     C_2p = tau_2p / resist
     C_1p = tau_1p / resist
     return C_2p, C_1p ##In farads?
+
+
 #The resistance results can be very noisy, and the time constant results can also be very noisy, 
 # but if we assume that the membrane capacitance is relatively constant across sweeps,
 #  we can use the time constant results to compute an alternative estimate of the membrane resistance, using the formula R = tau / C. This can help to smooth out some of the noise in the resistance results, and provide a more stable estimate of the membrane resistance.

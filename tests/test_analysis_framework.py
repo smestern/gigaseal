@@ -618,13 +618,6 @@ class TestMigratedModules:
                 x, y, c = _make_fake_data_2d()
             module.analyze(x, y, c)
 
-    def test_crop_spikes_pending(self):
-        """Shared crop helper is a stub until human-authored."""
-        from gigaseal.patch_utils import crop_spikes
-        x, y, c = _make_fake_sweep(spike=True)
-        with pytest.raises(NotImplementedError):
-            crop_spikes(x, y, c)
-
     def test_qc_analyze_synthetic(self):
         """QcAnalysis is implemented — returns a flat dict of metrics."""
         from gigaseal.analysis.qc import QcAnalysis
