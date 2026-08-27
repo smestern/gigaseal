@@ -16,6 +16,9 @@ import logging
 from gigaseal.patch_subthres import *
 from gigaseal._legacy.QC import *
 from gigaseal.featureExtractor import _merge_current_injection_features
+import gigaseal.utils as ut
+
+ut.DEBUG = False
 print("Load finished")
 def main():
     
@@ -118,8 +121,8 @@ def main():
                                     os.mkdir(root_fold+'//cm_plots//')  
 
     
-    dfs = pd.DataFrame()
-    averages = pd.DataFrame()
+    dfs = []
+    averages = []
     for root,dir,fileList in os.walk(files):
         for filename in fileList:
             if filename.endswith(".abf"):
@@ -194,6 +197,8 @@ def main():
                             resist = membrane_resistance(dataT, dataV, dataI)
                             Cm2, Cm1 = mem_cap(resist, decay_slow)
                             Cm3 = mem_cap_alt(resist, decay_slow, curve[3], np.amin(dataI))
+                            sag = compute_sag(dataT,dataV,dataI, time_after, plot=bplot, clear=False)
+                            sag, sag_min = sag if not np.any(np.isnan(sag)) else (np.nan, np.nan)
                             temp_df[f"_1 phase tau {real_sweep_number}"] = [p_decay]           
                             temp_df[f"fast 2 phase tau {real_sweep_number}"] = [decay_fast]
                             temp_df[f"slow 2 phase tau {real_sweep_number}"] = [decay_slow]
@@ -207,7 +212,7 @@ def main():
                             temp_df[f"_2 phase Cm {real_sweep_number}"] =  Cm2 * 1000000000000#to pf farad
                             temp_df[f"_ALT_2 phase Cm {real_sweep_number}"] =  Cm3 * 1000000000000
                             temp_df[f"_1 phase Cm {real_sweep_number}"] =  Cm1 * 1000000000000
-                            temp_df[f"Voltage sag {real_sweep_number}"],temp_df[f"Voltage min {real_sweep_number}"] = compute_sag(dataT,dataV,dataI, time_after, plot=bplot, clear=False)
+                            temp_df[f"Voltage sag {real_sweep_number}"],temp_df[f"Voltage min {real_sweep_number}"] = sag, sag_min
                             try:
                                 sag_ratio, taum_allen, voltage_allen = subthres_a(dataT,dataV,dataI, 0.0, np.amax(dataT))
                                 temp_df[f"Voltage sag ratio {real_sweep_number}"] = sag_ratio
@@ -323,9 +328,8 @@ def main():
                             temp_avg["Resistance Ladder SweepCount Measured"] = np.nan
                         
                         print(f"Computed a membrane resistance of {(resist  / 1000000000)} giga ohms, and a capatiance of {Cm2 * 1000000000000} pF, and tau of {decay_slow*1000} ms")
-                        dfs = dfs.append(temp_df, sort=True)
-                        averages = averages.append(temp_avg, sort=True)
-                    #except:
+                        dfs.append(temp_df)
+                        averages.append(temp_avg)
                     # print('Issue Processing ' + filename)
 
                     else:
@@ -336,8 +340,8 @@ def main():
 
     if True:
         #try:
-        dfs = dfs.reindex(sorted(dfs.columns), axis=1)
-        averages = averages.reindex(sorted(averages.columns), axis=1)
+        dfs = pd.concat(dfs)
+        averages = pd.concat(averages)
         #dfs.to_csv(root_fold + f'/Membrane_cap_{tag}.csv')
         with pd.ExcelWriter(root_fold + '/mem_cap_' + tag + '.xlsx') as runf:
             averages.set_index('1Afilename').to_excel(runf, sheet_name='Averages')

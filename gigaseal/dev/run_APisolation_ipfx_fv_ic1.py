@@ -436,7 +436,7 @@ for root,dir,fileList in os.walk(files):
                 first_spike_df = temp_spike_dfs[rheobase_sweep]
                 first_spike_start = first_spike_df['threshold_index'].to_numpy()[0]
                 time_aft = 10 / dt #grab 10 ms after
-                first_spike_end = np.int(first_spike_start + time_aft)
+                first_spike_end = np.int32(first_spike_start + time_aft)
                 abf.setSweep(rheobase_sweep)
                 dataT, dataV, dataI = abf.sweepX, abf.sweepY, abf.sweepC
                 neuron_data["first_ap_v"], neuron_data["first_ap_dv"] = compute_ap_vm(dataT, dataV, int(first_spike_start), int(first_spike_end))

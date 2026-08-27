@@ -29,6 +29,7 @@ class SubthresholdAnalysis(AnalysisBase):
         End time (s) of the analysis window (0 = end of sweep).
     """
 
+
     name = "subthreshold"
     display_name = "Subthreshold Analysis"
     sweep_mode = "per_sweep"

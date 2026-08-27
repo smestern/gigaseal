@@ -118,8 +118,8 @@ def crop_spikes(dataT, dataV, dataI, dv_cutoff=20.0, thresh_frac=0.2, pad=500):
                 p[1] = np.clip(p[1], p[0], p[0]+int(0.1/dt))
             
             #also enforce p[1] <= len()
-            p[1] = np.clip(p[1], p[0], len(dataT)-1).astype(np.int) #again, stop the end index from being longer than the length of the sweep, which can happen if the spike is detected at the end of the sweep.
-            temp = np.arange(p[0], p[1]).astype(np.int) #create an array of indices for the spike region
+            p[1] = np.clip(p[1], p[0], len(dataT)-1).astype(np.int32) #again, stop the end index from being longer than the length of the sweep, which can happen if the spike is detected at the end of the sweep.
+            temp = np.arange(p[0], p[1]).astype(np.int32) #create an array of indices for the spike region
             pair_data.append(temp.tolist()) #weird merging
             logger.info(f" === cropping spike between {dataT[int(p[0])]} and {dataT[(p[1])]} === ")
 
@@ -134,23 +134,6 @@ def crop_spikes(dataT, dataV, dataI, dv_cutoff=20.0, thresh_frac=0.2, pad=500):
     return sweep_data
 
 
-
-def create_dir(fp):
-    if os.path.exists(fp):
-        pass
-    else:
-        os.makedirs(fp)
-    return fp
-
-
-def df_select_by_col(df, string_to_find):
-    columns = df.columns.values
-    out = []
-    for col in columns:
-        string_found = [x in col for x in string_to_find]
-        if np.any(string_found):
-            out.append(col)
-    return df[out]
 
 def time_to_idx(dataX, time):
     if dataX.nDim > 1:
@@ -350,3 +333,21 @@ def load_protocols(path):
                 except:
                     print('error processing file ' + file_path)
     return np.unique(protocol)
+
+## === Just regular functions ===
+def create_dir(fp):
+    if os.path.exists(fp):
+        pass
+    else:
+        os.makedirs(fp)
+    return fp
+
+
+def df_select_by_col(df, string_to_find): #fuzzy search for columns in a dataframe
+    columns = df.columns.values
+    out = []
+    for col in columns:
+        string_found = [x in col for x in string_to_find]
+        if np.any(string_found):
+            out.append(col)
+    return df[out]
