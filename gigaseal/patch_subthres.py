@@ -67,13 +67,24 @@ def deriv(x,y):
     xfirst=0.5*(x[:-1]+x[1:])
     return xfirst, yfirst
 
-def rmp_mode(dataV, dataI):
-    try:
-        pre = find_downward(dataI)
-        mode_vm = mode(np.round(dataV[:pre]*4)/4, nan_policy='omit')[0][0]
-        return mode_vm
-    except:
-        return np.nan
+
+def rmp_mode(dataV, dataC, round_factor=10, method='mode'):
+    """Compute the resting membrane potential from the voltage trace before the stimulus.
+
+    Args:
+        dataV (np.array): the voltage data
+        dataC (np.array): the current data
+        round_factor (int, optional): rounding factor for the binned mode. Defaults to 10
+            (0.1mV resolution). Set to 1 for 1mV resolution. Ignored when method='hsm'.
+        method (str, optional): 'mode' (default) uses the binned/rounded mode; 'hsm' uses
+            the resolution-free half-sample mode, which is more precise and avoids the
+            bin-edge sensitivity of the rounded mode. Defaults to 'mode'.
+    Returns:
+        float: the resting membrane potential
+    """
+    # SHIM into analysis module
+    from .analysis.rmp import rmp_mode as rmp_mode_analysis
+    return rmp_mode_analysis(dataV, dataC, round_factor=round_factor, method=method)
 
 def mem_resist_alt(cm_alt, slow_decay):
     rm_alt = cm_alt / slow_decay

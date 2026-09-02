@@ -79,13 +79,25 @@ class QcAnalysis(AnalysisBase):
 
 
 def find_zero_qc(realC):
+    """
+    Finds the zero-current indices in the command array. For use in QC analysis, only the first sweep is considered.
+    Parameters
+    ----------
+    realC : np.ndarray
+        1-D command array from the first sweep.
+    
+    Returns
+    -------
+    zero_ind_crop : np.ndarray
+        Indices of the zero-current regions, cropped to exclude large jumps.
+    """
     #expects 1d array
     zero_ind = np.where(realC == 0)[0] #in this case we take the first sweep to find the zero current region, as it is assumed that all sweeps have the same zero current region
     ##Account for time constant?
     diff = np.diff(zero_ind) #zeros
     if np.amax(diff) > 1: #in this case we just want the zeros within the seweep
         diff_jump = np.where(diff>2)[0][0]
-        if diff_jump + 3000 > realC.shape[0]:
+        if diff_jump + 3000 > realC.shape[0]: #hop to account for time constant
             _hop = diff_jump
         else:
             _hop = diff_jump + 3000
@@ -96,8 +108,21 @@ def find_zero_qc(realC):
     return zero_ind_crop
 
 def find_baseline(zero_ind):
+    """
+    Finds the baseline indices within the zero-current regions.
+
+    Parameters
+    ----------
+    zero_ind : np.ndarray
+        Indices of the zero-current regions.
+
+    Returns
+    -------
+    baseline_idx : np.ndarray
+        Indices corresponding to the first continuous set of zeros.
+    """
     #the baseline will be the first continious set of zeros
-    baseline_idx = np.where(np.diff(zero_ind) > 1)[0]
+    baseline_idx = np.where(np.diff(zero_ind) > 1)[0] #one here is a magic number indicating a break in the zero-current region, should be elevated to PARAM? TODO
     if len(baseline_idx) == 0:
         baseline_idx = len(zero_ind)
     else:
@@ -105,12 +130,46 @@ def find_baseline(zero_ind):
     return zero_ind[0:baseline_idx+1]
 
 def compute_vm_drift(realY, zero_ind):
+    """
+    Computes the mean and absolute membrane potential drift within the zero-current regions.
+
+    Parameters
+    ----------
+    realY : np.ndarray
+        2-D response array (sweeps x time points).
+    zero_ind : np.ndarray
+        Indices of the zero-current regions.
+
+    Returns
+    -------
+    mean_drift : float
+        Mean drift across sweeps.
+    abs_drift : float
+        Absolute drift across all data points in the zero-current regions.
+    """
     sweep_wise_mean = np.mean(realY[:,zero_ind], axis=1)
     mean_drift = np.abs(np.amax(sweep_wise_mean) - np.amin(sweep_wise_mean))
     abs_drift = np.abs(np.amax(realY[:,zero_ind]) - np.amin(realY[:,zero_ind]))
     return mean_drift, abs_drift
 
 def compute_rms(realY, zero_ind):
+    """
+    Computes the root mean square (RMS) of the response within the zero-current regions.
+
+    Parameters
+    ----------
+    realY : np.ndarray
+        2-D response array (sweeps x time points).
+    zero_ind : np.ndarray
+        Indices of the zero-current regions.
+
+    Returns
+    -------
+    full_mean : float
+        Mean RMS across sweeps.
+    max_rms : float
+        Maximum RMS across sweeps.
+    """
     mean = np.mean(realY[:,zero_ind], axis=1)
     rms = []
     for x in np.arange(mean.shape[0]):

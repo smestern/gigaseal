@@ -1,4 +1,4 @@
-# Function-duplication inventory
+# Function-duplication inventory - UPDATED 260827
 
 Working checklist of duplicated function definitions across `gigaseal/`.
 Tick items off as each duplication is consolidated. Entry-point `def main():`
@@ -13,12 +13,12 @@ Legend: **canonical** = keep this one; delete/redirect the rest.
 
 Currently a **live triple** plus script copies.
 
-- [ ] `gigaseal/QC.py` — original core module
-- [ ] `gigaseal/_legacy/QC.py` — copy staged into `_legacy`
-- [ ] `gigaseal/analysis/qc.py` — copy colocated with `QcAnalysis`
-- [ ] `gigaseal/bin/run_QC.py` — local copies (all 5)
-- [ ] `gigaseal/dev/epsp_analysis.py` — `find_zero`, `find_baseline` (+ others)
-- [ ] `gigaseal/dev/run_APisolation_ipfx_fv_ic1.py` — all 5
+- [ ] `gigaseal/QC.py` — original core module. **NOW A SHIM**
+- [ ] `gigaseal/_legacy/QC.py` — copy staged into `_legacy` **LEGACY presevrved**
+- [x] `gigaseal/analysis/qc.py` — copy colocated with `QcAnalysis` **CORE MODULE**
+- [ ] `gigaseal/bin/run_QC.py` — local copies (all 5) **Deleted**
+- [ ] `gigaseal/dev/epsp_analysis.py` — `find_zero`, `find_baseline` (+ others) **TBD**
+- [ ] `gigaseal/dev/run_APisolation_ipfx_fv_ic1.py` — all 5 **TBD**
 
 **Action:** choose ONE canonical home (per `ANALYSIS_CORE_PLACEMENT.md`), delete
 the other two live copies, and delete the dev/bin local copies (or import from

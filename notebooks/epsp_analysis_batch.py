@@ -87,24 +87,7 @@ def compute_real_sweep_num(num):
     #frontfill the sweep number with zeros so it is 4 digits long
     return str(num).zfill(4)
 
-def rmp_mode(dataV, dataC, round_factor=10):
-    """Compute the resting membrane potential using the mode of the voltage trace before the stimulus. Using a rounding factor to avoid floating point issues.
-    Args:
-        dataV (np.array): the voltage data
-        dataC (np.array): the current data
-        round_factor (int, optional): the rounding factor to use. Defaults to 10 (0.1mV resolution). set to 1 for 1mV resolution.
-    Returns:
-        float: the resting membrane potential
-    """
-    #take upto the first non zero
-    pre = np.where(dataC[0]>0)[0][0]
-    if pre==0:
-        #skip the nonzeros at the begining 
-        pre = np.where(np.round(dataC[0])>0)[0][0]
-    mode_vm = mode(np.ravel(np.round(dataV[:, :pre]*round_factor)/round_factor), axis=None, nan_policy='omit')[0]
-    if not np.isscalar(mode_vm):
-        mode_vm = mode_vm[0] #depending on the version of scipy, mode returns an array or a single value (here we make sure it is a single value)
-    return mode_vm
+
 
 def determine_protocol_to_use(abf):
     """
