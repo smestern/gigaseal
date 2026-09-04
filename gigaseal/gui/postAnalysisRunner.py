@@ -13,6 +13,7 @@ import numpy as np
 from scipy import stats
 from scipy.stats import f_oneway
 #from statsmodels.stats.multitest import multipletests
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QWizard, QWizardPage, QVBoxLayout, QHBoxLayout, QGroupBox, QLineEdit,
@@ -24,6 +25,14 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
+
+def _apply_group_mapping(data, categorical_col, mapping):
+    """Filter to included groups and rename them to their merge targets."""
+    if not mapping:
+        return data
+    filtered = data[data[categorical_col].isin(list(mapping.keys()))].copy()
+    filtered[categorical_col] = filtered[categorical_col].map(mapping)
+    return filtered
 
 
 class PostAnalysisWizard(QWizard):
@@ -38,6 +47,7 @@ class PostAnalysisWizard(QWizard):
         # Data storage
         self.data = None
         self.categorical_column = None
+        self.group_mapping = {}  # original group value -> merged name; absent = excluded
         self.selected_features = []
         self.results = {}
         
@@ -207,7 +217,15 @@ class CategorySelectionPage(QWizardPage):
         
         self.group_table = QTableWidget()
         self.group_table.setMaximumHeight(200)
+        self.group_table.itemChanged.connect(self.on_group_table_changed)
         preview_layout.addWidget(self.group_table)
+        
+        hint_label = QLabel(
+            "Uncheck groups to exclude them; give multiple groups the same "
+            "'Merge into' name to combine them."
+        )
+        hint_label.setWordWrap(True)
+        preview_layout.addWidget(hint_label)
         
         self.group_info_label = QLabel("Select a categorical variable to see group information")
         preview_layout.addWidget(self.group_info_label)
@@ -235,6 +253,7 @@ class CategorySelectionPage(QWizardPage):
             return
             
         self.wizard().categorical_column = category_col
+        self.wizard().group_mapping = {}
         self.update_group_preview(category_col)
         
         # Emit signal to update wizard page completion status
@@ -250,31 +269,90 @@ class CategorySelectionPage(QWizardPage):
             # Get group counts
             group_counts = data[category_col].value_counts().sort_index()
             
+            self.group_table.blockSignals(True)
             self.group_table.setRowCount(len(group_counts))
-            self.group_table.setColumnCount(2)
-            self.group_table.setHorizontalHeaderLabels(["Group", "Count"])
+            self.group_table.setColumnCount(4)
+            self.group_table.setHorizontalHeaderLabels(["Include", "Group", "Count", "Merge into"])
             
             for i, (group, count) in enumerate(group_counts.items()):
-                self.group_table.setItem(i, 0, QTableWidgetItem(str(group)))
-                self.group_table.setItem(i, 1, QTableWidgetItem(str(count)))
+                include_item = QTableWidgetItem()
+                include_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
+                include_item.setCheckState(Qt.Checked)
+                # keep the original (possibly non-string) group value
+                include_item.setData(Qt.UserRole, group)
+                self.group_table.setItem(i, 0, include_item)
+                
+                group_item = QTableWidgetItem(str(group))
+                group_item.setFlags(Qt.ItemIsEnabled)
+                self.group_table.setItem(i, 1, group_item)
+                
+                count_item = QTableWidgetItem(str(count))
+                count_item.setFlags(Qt.ItemIsEnabled)
+                self.group_table.setItem(i, 2, count_item)
+                
+                self.group_table.setItem(i, 3, QTableWidgetItem(str(group)))
                 
             self.group_table.resizeColumnsToContents()
+            self.group_table.blockSignals(False)
             
-            total_groups = len(group_counts)
-            total_samples = group_counts.sum()
-            self.group_info_label.setText(
-                f"Found {total_groups} groups with {total_samples} total samples"
-            )
+            self.refresh_group_mapping()
             return True
             
         except Exception as e:
+            self.group_table.blockSignals(False)
             self.group_info_label.setText(f"Error analyzing groups: {str(e)}")
     
+    def on_group_table_changed(self, item):
+        """Handle include-checkbox or merge-name edits"""
+        self.refresh_group_mapping()
+        
+    def refresh_group_mapping(self):
+        """Rebuild the wizard's group mapping from the table state"""
+        wizard = self.wizard()
+        if wizard is None:
+            return
+            
+        mapping = {}
+        included_samples = 0
+        for row in range(self.group_table.rowCount()):
+            include_item = self.group_table.item(row, 0)
+            if include_item is None or include_item.checkState() != Qt.Checked:
+                continue
+            group = include_item.data(Qt.UserRole)
+            merge_item = self.group_table.item(row, 3)
+            target = merge_item.text().strip() if merge_item else ""
+            mapping[group] = target if target else str(group)
+            count_item = self.group_table.item(row, 2)
+            try:
+                included_samples += int(count_item.text()) if count_item else 0
+            except ValueError:
+                pass
+                
+        wizard.group_mapping = mapping
+        
+        n_included = len(mapping)
+        n_effective = len(set(mapping.values()))
+        text = f"{n_included} group(s) included"
+        if n_effective != n_included:
+            text += f" ({n_effective} after merging)"
+        text += f", {included_samples} samples"
+        if n_effective < 2:
+            text += " — at least 2 groups are required for ANOVA"
+        self.group_info_label.setText(text)
+        
+        self.completeChanged.emit()
+    
     def isComplete(self):
-        """Check if a categorical column is selected"""
-        # Check both the combo box and the wizard's stored value
+        """Check if a categorical column is selected and >=2 effective groups remain"""
         current_text = self.category_combo.currentText()
-        return bool(current_text and current_text.strip())
+        if not (current_text and current_text.strip()):
+            return False
+        wizard = self.wizard()
+        mapping = getattr(wizard, 'group_mapping', {}) if wizard else {}
+        if not mapping:
+            # table not populated yet (e.g. no data loaded); fall back to combo check
+            return True
+        return len(set(mapping.values())) >= 2
 
 
 class FeatureSelectionPage(QWizardPage):
@@ -416,7 +494,10 @@ class AnalysisPage(QWizardPage):
                 
             # Clean data - remove rows with NaN in categorical column
             clean_data = data.dropna(subset=[categorical_col])
+            clean_data = _apply_group_mapping(clean_data, categorical_col, wizard.group_mapping)
             groups = clean_data[categorical_col].unique()
+            if len(groups) < 2:
+                raise ValueError("At least 2 included groups are required for ANOVA")
             
             results = {}
             total_features = len(features)
@@ -437,11 +518,12 @@ class AnalysisPage(QWizardPage):
                     continue
                 
                 # Prepare data for ANOVA
-                group_data = []
+                group_pairs = []
                 for group in groups:
                     group_values = feature_data[feature_data[categorical_col] == group][feature]
                     if len(group_values) > 0:
-                        group_data.append(group_values)
+                        group_pairs.append((group, group_values))
+                group_data = [values for _, values in group_pairs]
                 
                 # Run one-way ANOVA
                 if len(group_data) >= 2 and all(len(g) > 0 for g in group_data):
@@ -459,10 +541,8 @@ class AnalysisPage(QWizardPage):
                         'eta_squared': eta_squared,
                         'groups': len(group_data),
                         'total_n': len(feature_data),
-                        'group_means': {str(groups[i]): np.mean(group_data[i]) 
-                                      for i in range(len(group_data))},
-                        'group_stds': {str(groups[i]): np.std(group_data[i]) 
-                                     for i in range(len(group_data))},
+                        'group_means': {str(g): np.mean(v) for g, v in group_pairs},
+                        'group_stds': {str(g): np.std(v) for g, v in group_pairs},
                         'error': None
                     }
                 else:
@@ -699,6 +779,7 @@ class ResultsPage(QWizardPage):
                 plt.figure(figsize=(8, 6))
                 
                 clean_data = data[[categorical_col, feature]].dropna()
+                clean_data = _apply_group_mapping(clean_data, categorical_col, wizard.group_mapping)
                 
                 # Box plot
                 plt.subplot(1, 2, 1)

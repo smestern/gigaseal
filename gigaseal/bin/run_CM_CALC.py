@@ -17,6 +17,7 @@ from gigaseal.patch_subthres import *
 from gigaseal._legacy.QC import *
 from gigaseal.featureExtractor import _merge_current_injection_features
 import gigaseal.utils as ut
+from gigaseal.patch_utils import df_select_by_col
 
 ut.DEBUG = False
 print("Load finished")

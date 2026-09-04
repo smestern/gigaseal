@@ -7,6 +7,7 @@ from .loadFile import loadFile
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 import os
+import uuid
 try:
 
     from ipfx.dataset.ephys_data_set import EphysDataSet
@@ -69,9 +70,9 @@ class cellData(object):
             if name is not None:
                 self.name = name
             else:
-                logger.info(f"Generating name from data")
+                logger.info(f"Generating name")
                 # create a unique name by hashing the data
-                self.name = "unamed_" + str(hash(str(dataY[0])))
+                self.name = "unamed_" + str(uuid.uuid4())
 
             self.dataX = dataX
             self.dataY = dataY

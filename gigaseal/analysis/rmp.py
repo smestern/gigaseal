@@ -180,7 +180,11 @@ def rmp_mode(dataV, dataC=None, round_factor=10, method='mode'):
         #if data C or DataV is 1-D, make them 2-D for consistency
         if dataC.ndim == 1:
             dataC = dataC[np.newaxis, :]
-        pre = np.ravel(np.where(dataC[0]>0))[0]
+        pre = np.ravel(np.where(dataC[0]>0))
+        if len(pre) == 0:
+            pre = 1
+        else:
+            pre = pre[0]
         if pre==0:
             #skip the nonzeros at the begining 
             pre = np.where(np.round(dataC[0])>0)[0][0]

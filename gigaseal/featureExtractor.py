@@ -76,13 +76,13 @@ def analyze(x=None, y=None, c=None, file=None, param_dict=DEFAULT_DICT, return_s
 #cache the function
 def analyze_sweep(x=None, y=None, c=None, param_dict=DEFAULT_DICT, bessel_filter=None):
     """ This function will run the ipfx feature extractor on a single sweep. It will return the spike_in_sweep and spike_train dataframes as returned by the ipfx feature extractor.
-    takes:
+    Args:
         x (np.array): The time array of the sweep (1d array)
         y (np.array): The voltage array of the sweep (1d array)
         c (np.array): The current array of the sweep (1d array)
         param_dict (dict): The dictionary of parameters that will be passed to the feature extractor. defaults to the default_dict
         bessel_filter (int): The cutoff frequency of the bessel filter. If -1, no filter will be applied. Defaults to None.
-    returns:
+    Returns:
         spike_in_sweep (pd.DataFrame): The dataframe that contains the standard ipfx features for the sweep
         spike_train (pd.DataFrame): The dataframe that contains the standard ipfx features for the consecutive spikes in the sweep
     """ 
@@ -99,15 +99,16 @@ def analyze_sweep(x=None, y=None, c=None, param_dict=DEFAULT_DICT, bessel_filter
     return spike_in_sweep, spike_train
 
 def analyze_sweepset(x=None, y=None, c=None, file=None, sweeplist=None, param_dict=DEFAULT_DICT):
-    """ Runs the ifpx feature extractor over a set of sweeps. Returns the standard ipfx dataframe, and summary dataframes.
+    """ Runs the ifpx feature extractor over a set of sweeps. Returns the inoue 2020 summary dataframes.
     Args:
-        file (_type_): _description_
-        sweeplist (_type_, optional): _description_. Defaults to None.
-        plot (int, optional): _description_. Defaults to -1.
-        param_dict (_type_, optional): _description_. Defaults to None.
+        x (np.array): The time array of the sweep (1d array)
+        y (np.array): The voltage array of the sweep (1d array)
+        c (np.array): The current array of the sweep (1d array)
+        param_dict (dict): The dictionary of parameters that will be passed to the feature extractor. defaults to the default_dict
+        bessel_filter (int): The cutoff frequency of the bessel filter. If -1, no filter will be applied. Defaults to None.
 
     Returns:
-        _type_: _description_
+        pd.DataFrame: The summary dataframe containing the extracted features for the sweeps.
     """    
     data = parse_user_input(x, y, c, file)
 
