@@ -592,7 +592,7 @@ class TestMigratedModules:
     def test_rmp_parameters(self):
         from gigaseal.analysis.rmp import RmpAnalysis
         assert set(RmpAnalysis().get_parameters()) == {
-            "window", "bin_time", "crop_spikes", "filter",
+            "window", "bin_time", "crop_spikes", "filter", "method",
         }
 
     def test_membrane_fit_parameters(self):
@@ -606,7 +606,7 @@ class TestMigratedModules:
         from gigaseal.analysis.membrane_fit import MembraneAnalysis
         assert MembraneAnalysis.sweep_mode == "per_file"
 
-    @pytest.mark.parametrize("module_name", ["rmp", "membrane_fit", "growth_factor"])
+    @pytest.mark.parametrize("module_name", ["membrane_fit", "growth_factor"])
     def test_analyze_pending(self, module_name):
         """Bodies are stubs until human-authored — assert the TODO state."""
         from gigaseal.analysis import get
@@ -617,6 +617,21 @@ class TestMigratedModules:
             else:
                 x, y, c = _make_fake_data_2d()
             module.analyze(x, y, c)
+
+    def test_rmp_analyze_synthetic(self):
+        """RmpAnalysis is implemented — returns per-sweep RMP statistics."""
+        from gigaseal.analysis.rmp import RmpAnalysis
+        x, y, c = _make_fake_sweep()
+        out = RmpAnalysis().analyze(x, y, c)
+        assert isinstance(out, dict)
+        assert set(out) == {
+            "overall_mean_vm", "overall_std_vm",
+            "first_window_mean_vm", "first_window_median_vm", "first_window_mode_vm",
+            "end_window_mean_vm", "end_window_median_vm", "end_window_mode_vm",
+            "delta_vm", "length_s",
+        }
+        assert out["overall_mean_vm"] == pytest.approx(-70.0)
+        assert out["delta_vm"] == pytest.approx(0.0)
 
     def test_qc_analyze_synthetic(self):
         """QcAnalysis is implemented — returns a flat dict of metrics."""

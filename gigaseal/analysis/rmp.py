@@ -12,7 +12,6 @@ lab-specific RMP logic is reviewed rather than machine-generated.
 """
 
 import logging
-from turtle import mode
 
 import numpy as np
 
@@ -81,7 +80,6 @@ class RmpAnalysis(AnalysisBase):
         dict
             The RMP statistics described in the class docstring.
         """
-        # TODO(human): port per-sweep RMP computation
         from ..patch_utils import crop_spikes
         #if the end user kwargs override the default parameters, update the instance attributes accordingly.
         for key, value in kwargs.items():
