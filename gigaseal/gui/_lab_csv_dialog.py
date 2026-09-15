@@ -38,6 +38,7 @@ from ..database.tsDatabase import (
     _detect_header_rows,
     _read_grouped_csv,
     resolve_file_ids,
+    suggest_column_role,
 )
 
 
@@ -133,7 +134,9 @@ class LabCSVImportDialog(QDialog):
         n_hdr = self._header_spin.value()
         try:
             if n_hdr == 1:
-                df = pd.read_csv(self._path)
+                # dtype=str keeps numeric IDs intact (mirrors load_csv)
+                df = pd.read_csv(self._path, dtype=str, keep_default_na=False)
+                df = df.replace("", pd.NA)
                 self._group_map = {c: "" for c in df.columns}
             else:
                 df, self._group_map = _read_grouped_csv(self._path, n_hdr)
@@ -165,11 +168,13 @@ class LabCSVImportDialog(QDialog):
         self._unique_id_combo.blockSignals(False)
 
         # Per-column table
+        drug_col = self._drug_edit.text().strip() or "drug"
         self._table.setRowCount(len(cols))
         for i, col in enumerate(cols):
             group = self._group_map.get(col, "")
             kind = _classify_column_values(df[col])
-            role = _ROLE_PROTOCOL if kind == "file_id" else _ROLE_METADATA
+            suggested = suggest_column_role(str(col), df[col], drug_col)
+            role = _ROLE_PROTOCOL if suggested == "protocol" else _ROLE_METADATA
 
             self._table.setItem(i, 0, _ro_item(str(col)))
             self._table.setItem(i, 1, _ro_item(group))
@@ -246,12 +251,20 @@ class LabCSVImportDialog(QDialog):
         if folder and os.path.isdir(folder):
             try:
                 summary = resolve_file_ids(self._db, folder)
-                QMessageBox.information(
-                    self, "File-ID resolution",
+                msg = (
                     f"Resolved {summary['resolved']} reference(s);\n"
                     f"unresolved: {summary['unresolved']}\n"
-                    f"collisions: {len(summary['collisions'])}",
+                    f"collisions: {len(summary['collisions'])}"
                 )
+                if summary["samples_unresolved"]:
+                    msg += "\n\nUnresolved examples:\n" + "\n".join(
+                        summary["samples_unresolved"]
+                    )
+                if summary["collisions"]:
+                    msg += "\n\nColliding stems:\n" + "\n".join(
+                        summary["collisions"][:10]
+                    )
+                QMessageBox.information(self, "File-ID resolution", msg)
             except Exception as e:
                 QMessageBox.warning(self, "Resolution failed", str(e))
 

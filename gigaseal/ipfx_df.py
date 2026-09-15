@@ -21,6 +21,8 @@ ipfx_train_feature_labels =['adapt',  'isi_cv', 'mean_isi', 'median_isi',
 running_lab = ['Trough', 'Peak', 'Max Rise (upstroke)', 'Max decline (downstroke)', 'Width', 'isi']
 
 subsheets_spike = {'full sheet': ['']}
+#we used to have more subsheets for different features, 
+# but now we have consolidated them into the current structure as users found it more convenient
 #old subsheets 'spike count':['spike count'], 'rheobase features':['rheobase'], 
     #                'mean':['mean'], 'isi':['isi'], 'latency': ['latency_'], 'current':['current'],'QC':['QC'], 
         #            'spike features':['spike_'], 'subthres features':['baseline voltage', 'Sag', 'Taum'], 

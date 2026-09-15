@@ -23,6 +23,8 @@ resolve_file_ids = _mod.resolve_file_ids
 _detect_header_rows = _mod._detect_header_rows
 _classify_column_values = _mod._classify_column_values
 _looks_like_file_id = _mod._looks_like_file_id
+_read_grouped_csv = _mod._read_grouped_csv
+suggest_column_role = _mod.suggest_column_role
 
 FIXTURE_DIR = os.path.join(os.path.dirname(__file__), "test_data")
 PER_CELL = os.path.join(FIXTURE_DIR, "lab_db_per_cell.csv")
@@ -306,3 +308,126 @@ class TestResolveFileIds:
         pd.testing.assert_frame_equal(
             db.cellindex.astype(str), before.astype(str)
         )
+
+    def test_token_normalization(self, tmp_path):
+        # Float-coercion artefacts and extension-bearing tokens must resolve
+        (tmp_path / "26505004.abf").write_bytes(b"x")
+        (tmp_path / "240507_0000.abf").write_bytes(b"x")
+        db = tsDatabase()
+        db.add_cell("C1")
+        db.add_cell("C2")
+        db.add_protocol("IC1")
+        db.assign_file("C1", "IC1", "26505004.0")
+        db.assign_file("C2", "IC1", "240507_0000.abf")
+        summary = resolve_file_ids(db, str(tmp_path))
+        assert summary["resolved"] == 2
+        assert summary["unresolved"] == 0
+        assert db.get_file_list("C1", "IC1")[0].endswith("26505004.abf")
+        assert db.get_file_list("C2", "IC1")[0].endswith("240507_0000.abf")
+
+    def test_summary_reports_columns_scanned(self, tmp_path):
+        db = tsDatabase()
+        db.load_csv(PER_RECORDING)
+        summary = resolve_file_ids(db, str(tmp_path))
+        assert "IC1" in summary["columns_scanned"]
+        assert "CELL_ID" not in summary["columns_scanned"]
+        assert "DATE" not in summary["columns_scanned"]
+
+
+# ======================================================================
+# suggest_column_role — name precedence over value sniffing
+# ======================================================================
+
+class TestSuggestColumnRole:
+
+    def test_id_shaped_metadata_stays_metadata(self):
+        # CELL_ID values pass _looks_like_file_id, but the name must win
+        s = pd.Series(["SLICE1_CELL1", "SLICE1_CELL2", "SLICE2_CELL1"])
+        assert _classify_column_values(s) == "file_id"
+        assert suggest_column_role("CELL_ID", s) == "metadata"
+        assert suggest_column_role("UNIQUE_ID", s) == "metadata"
+
+    def test_date_column_is_metadata(self):
+        s = pd.Series(["5/7/2024", "5/10/2024"])
+        assert suggest_column_role("DATE", s) == "metadata"
+
+    def test_note_and_drug_are_metadata(self):
+        s = pd.Series(["DOPA_50", "NE"])
+        assert suggest_column_role("NOTE", s) == "metadata"
+        assert suggest_column_role("my_drug", s, drug_col="my_drug") == "metadata"
+
+    def test_file_id_column_is_protocol(self):
+        s = pd.Series(["240507_0000", None, "240507_0008"])
+        assert suggest_column_role("IC1", s) == "protocol"
+
+    def test_metric_column_is_metadata(self):
+        s = pd.Series(["15.442", "12.87", None])
+        assert suggest_column_role("EXP3", s) == "metadata"
+
+
+# ======================================================================
+# Dialog-style import (explicit role lists) → clean resolution
+# ======================================================================
+
+class TestDialogStyleImport:
+
+    def test_explicit_lists_from_suggestions_resolve_cleanly(self, tmp_path):
+        # Mirror LabCSVImportDialog: classify every column up front and
+        # pass explicit protocol/metadata lists to load_csv.
+        df, _ = _read_grouped_csv(PER_RECORDING, 3)
+        proto, meta = [], []
+        for col in df.columns:
+            role = suggest_column_role(str(col), df[col])
+            (proto if role == "protocol" else meta).append(str(col))
+        assert "CELL_ID" in meta
+        assert "DATE" in meta
+        assert "UNIQUE_ID" in meta
+        assert "IC1" in proto
+
+        db = tsDatabase()
+        db.load_csv(PER_RECORDING, protocol_cols=proto, metadata_cols=meta)
+        assert "CELL_ID" not in db.get_protocol_columns()
+        assert "DATE" not in db.get_protocol_columns()
+
+        # Stub every referenced recording, then everything must resolve
+        for col in db.get_protocol_columns():
+            base = db.protocol_base_name(col)
+            cond = db.protocol_condition(col)
+            for cell in db.cell_names():
+                for tok in db.get_file_list(cell, base, condition=cond):
+                    (tmp_path / f"{tok}.abf").write_bytes(b"x")
+        summary = resolve_file_ids(db, str(tmp_path))
+        assert summary["unresolved"] == 0
+        assert summary["resolved"] > 0
+        # No cell-id tokens leaked into the resolver
+        assert not any(s.startswith("SLICE") for s in summary["samples_unresolved"])
+
+
+# ======================================================================
+# Flat CSV — numeric-ID dtype preservation
+# ======================================================================
+
+class TestFlatNumericIdCsv:
+
+    def _write_flat(self, tmp_path):
+        p = tmp_path / "flat.csv"
+        # blank cell forces float64 coercion without dtype=str
+        p.write_text("cell,IC1,drug\nC1,26505004,NE\nC2,,aCSF\nC3,26512011,\n")
+        return str(p)
+
+    def test_ids_survive_as_strings(self, tmp_path):
+        db = tsDatabase()
+        db.load_csv(self._write_flat(tmp_path))
+        assert "IC1" in db.get_protocol_columns()
+        assert db.get_file_list("C1", "IC1") == ["26505004"]
+        assert db.get_file_list("C3", "IC1") == ["26512011"]
+
+    def test_ids_resolve_against_folder(self, tmp_path):
+        (tmp_path / "26505004.abf").write_bytes(b"x")
+        (tmp_path / "26512011.abf").write_bytes(b"x")
+        db = tsDatabase()
+        db.load_csv(self._write_flat(tmp_path))
+        summary = resolve_file_ids(db, str(tmp_path))
+        assert summary["resolved"] == 2
+        assert summary["unresolved"] == 0
+        assert db.get_file_list("C1", "IC1")[0].endswith("26505004.abf")

@@ -93,7 +93,7 @@ def crop_spikes(dataT, dataV, dataI, dv_cutoff=20.0, thresh_frac=0.2, pad=500):
     logger.info("Finding Spikes to be Removed")
     
     from ipfx import feature_extractor
-    spikext = feature_extractor.SpikeFeatureExtractor(filter=0, dv_cutoff=20, thresh_frac=0.2)
+    spikext = feature_extractor.SpikeFeatureExtractor(filter=0, dv_cutoff=dv_cutoff, thresh_frac=thresh_frac)
     
     dt = dataT[1] - dataT[0]
     try:
@@ -104,8 +104,8 @@ def crop_spikes(dataT, dataV, dataI, dv_cutoff=20.0, thresh_frac=0.2, pad=500):
     if spike_in_sweep.empty == False:
         #remove spikes
         logger.info(f" === Found {spike_in_sweep.shape[0]} spikes === ")
-        ap_start_ = spike_in_sweep['threshold_index'].to_numpy() - 500 #Take 500 samples before threshold, maybe make this DT dependent?
-        ap_end_ = spike_in_sweep['trough_index'].to_numpy() + 500 #take 500 samples after trough, maybe make this DT dependent?
+        ap_start_ = spike_in_sweep['threshold_index'].to_numpy() - pad #Take 500 samples before threshold, maybe make this DT dependent?
+        ap_end_ = spike_in_sweep['trough_index'].to_numpy() + pad #take 500 samples after trough, maybe make this DT dependent?
         pairs = np.vstack((ap_start_, ap_end_)).T #pairs is a 2D array of start and end indices for each spike
         pairs = np.nan_to_num(pairs, nan=len(dataT)) #this is a hack to deal with the fact that some spikes are detected at the end of the sweep and have a NaN for the end index. This will set the end index to the length of the sweep, which will be clipped later.
         pairs = pairs.astype(np.int32) #casting for indexing

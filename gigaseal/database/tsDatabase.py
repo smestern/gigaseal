@@ -128,6 +128,25 @@ def _classify_column_values(series: pd.Series) -> str:
     return "text"
 
 
+def suggest_column_role(col: str, series: pd.Series,
+                        drug_col: str = "drug") -> str:
+    """Return ``'metadata'`` or ``'protocol'`` for a column.
+
+    Name-based metadata matching wins over value sniffing so ID-shaped
+    metadata (``CELL_ID``, ``DATE``, ``UNIQUE_ID``) is never mistaken
+    for recording references.
+    """
+    meta_lookup = {m.lower() for m in DEFAULT_METADATA_COLS} \
+        | set(_EXTENDED_METADATA_NAMES) \
+        | {drug_col.lower()}
+    base = col.split(CONDITION_SEP, 1)[0]
+    if col.strip().lower() in meta_lookup or base.strip().lower() in meta_lookup:
+        return "metadata"
+    if _classify_column_values(series) == "file_id":
+        return "protocol"
+    return "metadata"
+
+
 # ----------------------------------------------------------------------
 # CSV header / structure helpers (module-level, pure)
 # ----------------------------------------------------------------------
@@ -378,10 +397,12 @@ def resolve_file_ids(
     matches a known file. Unmatched tokens are preserved. Numeric tokens
     that match by zero-stripped equality are also accepted (``"4"`` ↔
     ``"240507_0004"`` does **not** match — only exact-stem and
-    int-equality matches are honoured).
+    int-equality matches are honoured). Tokens carrying a known extension
+    (``240507_0000.abf``) or a float-coercion artefact (``26505004.0``)
+    are normalised before lookup.
 
     Returns a summary dict ``{resolved, unresolved, samples_unresolved,
-    collisions}`` for the caller to surface.
+    collisions, columns_scanned}`` for the caller to surface.
     """
     folder = os.path.abspath(folder)
     stem_map: Dict[str, str] = {}
@@ -411,6 +432,7 @@ def resolve_file_ids(
         return {
             "resolved": 0, "unresolved": 0,
             "samples_unresolved": [], "collisions": sorted(set(collisions)),
+            "columns_scanned": [],
         }
 
     proto_cols = db.get_protocol_columns()
@@ -420,10 +442,11 @@ def resolve_file_ids(
                 val = db.cellindex.at[cell, col]
             except KeyError:
                 continue
-            if val is None or (isinstance(val, float) and pd.isna(val)):
+            # pd.isna covers None, float NaN, and pd.NA sentinels
+            if not isinstance(val, str) and pd.isna(val):
                 continue
             s = str(val).strip()
-            if not s or s.lower() in {"nan", "none"}:
+            if not s or s.lower() in {"nan", "none", "<na>"}:
                 continue
             tokens = [t.strip() for t in s.split(";") if t.strip()]
             new_tokens: List[str] = []
@@ -432,9 +455,16 @@ def resolve_file_ids(
                 if os.path.isabs(tok) or os.path.sep in tok or "/" in tok:
                     new_tokens.append(tok)
                     continue
-                hit = stem_map.get(tok)
-                if hit is None and tok.isdigit():
-                    hit = int_map.get(int(tok))
+                key = tok
+                root, ext = os.path.splitext(key)
+                if ext.lower() in extensions:
+                    key = root
+                # repair float-coerced IDs ("26505004.0")
+                if key.endswith(".0") and key[:-2].isdigit():
+                    key = key[:-2]
+                hit = stem_map.get(key)
+                if hit is None and key.isdigit():
+                    hit = int_map.get(int(key))
                 if hit:
                     new_tokens.append(hit)
                     resolved += 1
@@ -452,6 +482,7 @@ def resolve_file_ids(
         "unresolved": unresolved,
         "samples_unresolved": unresolved_samples,
         "collisions": sorted(set(collisions)),
+        "columns_scanned": list(proto_cols),
     }
 
 
@@ -1018,7 +1049,10 @@ class tsDatabase:
 
         # 2. Read raw
         if n_hdr == 1:
-            df = pd.read_csv(path)
+            # dtype=str stops pandas float-coercing bare numeric IDs
+            # ("26505004" → 26505004.0), which breaks file-ID resolution.
+            df = pd.read_csv(path, dtype=str, keep_default_na=False)
+            df = df.replace("", pd.NA)
             group_map: Dict[str, str] = {c: "" for c in df.columns}
         else:
             df, group_map = _read_grouped_csv(path, n_hdr)
@@ -1081,9 +1115,6 @@ class tsDatabase:
 
         # Build experimentalStructure and classify columns
         self.exp = experimentalStructure()
-        meta_lookup = {m.lower() for m in DEFAULT_METADATA_COLS} \
-            | set(_EXTENDED_METADATA_NAMES) \
-            | {drug_col.lower()}
         explicit_meta = {c for c in (metadata_cols or [])}
         explicit_proto = {c for c in (protocol_cols or [])}
 
@@ -1102,15 +1133,8 @@ class tsDatabase:
                 )
                 continue
 
-            name_low = col.lower()
-            base_low = base.lower()
-            if name_low in meta_lookup or base_low in meta_lookup:
-                self.exp.mark_metadata(col)
-                continue
-
-            # Auto-classify by value type
-            value_kind = _classify_column_values(df[col])
-            if value_kind == "file_id":
+            # Auto-classify: name-based metadata match wins, then value type
+            if suggest_column_role(col, df[col], drug_col) == "protocol":
                 self.exp.add_protocol(
                     base, conditions=[cond] if cond else None,
                     group=group_label or None,
