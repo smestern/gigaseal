@@ -63,7 +63,7 @@ class LegacySpikeAnalysis(AnalysisBase):
 
     def analyze(self, x, y, c, **kwargs) -> dict:
         """
-        Run ipfx spike extraction on a single sweep.
+        Run ipfx spike extraction on a file.
 
         Returns a flat dict of spike features.  If no spikes are found,
         returns ``{"spike_count": 0}``.

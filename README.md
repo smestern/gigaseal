@@ -2,7 +2,7 @@
 
 A Python package for batch electrophysiology feature extraction, analysis, and visualization of ABF files. Built for the Inoue Lab @ Western University.
 
-> **`gigaseal` is the continuation of [`pyAPisolation`](https://github.com/smestern/pyAPisolation).** The original `pyAPisolation` code is frozen for reproducibility of its associated publication — see [History & Citation](#history--citation).
+> **`gigaseal` is the continuation of [`pyAPisolation`](https://github.com/smestern/pyAPisolation).** The original `pyAPisolation` code is frozen for reproducibility of its associated publication. See [History & Citation](#history--citation).
 
 ![](PVN_CLAMP.PNG)
 

@@ -305,7 +305,6 @@ def compute_sag(dataT,dataV,dataI, time_aft, plot=False, clear=True) -> tuple[fl
     min_point = downwardinfl + np.argmin(dataV[downwardinfl:end_index2]) #index of the min point
     avg_min = np.nanmean(dataV[min_point]) #average of the min point
     sag_diff = avg_min - vm #sag amplitude
-    #sag_diff_plot = np.arange(avg_min, vm, 1)
     #plotting code removed for clarity
     return sag_diff, avg_min
    

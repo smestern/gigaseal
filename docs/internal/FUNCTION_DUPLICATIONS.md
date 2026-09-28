@@ -24,6 +24,8 @@ Currently a **live triple** plus script copies.
 the other two live copies, and delete the dev/bin local copies (or import from
 canonical).
 
+**COMPLETE**
+
 ---
 
 ## 2. Spike cropping — `crop_ap`
@@ -32,6 +34,8 @@ canonical).
 - [ ] `gigaseal/bin/run_rmp.py` — `dv_cutoff=20, thresh_frac=0.2` variant
 
 **Action:** consolidate into the stubbed `gigaseal/patch_utils.crop_spikes`.
+
+**COMPLETE**
 
 ---
 
@@ -42,14 +46,18 @@ canonical).
 
 **Action:** fold into `RmpAnalysis.analyze()`.
 
+**COMPLETE**
+
+
 ---
 
 ## 4. Running-bin helpers — `running_bin` / `build_running_bin`
 
-- [ ] `gigaseal/patch_utils.py` — `build_running_bin` (**canonical**)
+- [X] `gigaseal/patch_utils.py` — `build_running_bin` (**canonical**)
 - [ ] `gigaseal/bin/run_rmp.py` — local `running_bin`
 - [ ] `gigaseal/dev/run_APisolation_ipfx_fv_ic1.py` — duplicate `build_running_bin`
 
+**Action:** Patch utils is the cannon one. Run rmp is deprecated. run_APisolation_ipfx_Fv has been updated
 ---
 
 ## 5. Exponential growth/decay fitting
