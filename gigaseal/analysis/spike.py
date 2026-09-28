@@ -68,7 +68,7 @@ class LegacySpikeAnalysis(AnalysisBase):
         Returns a flat dict of spike features.  If no spikes are found,
         returns ``{"spike_count": 0}``.
         """
-        from ..featureExtractor import analyze
+        from ..featureExtractor import analyze, save_data_frames
 
         # Build ipfx-compatible param_dict from our class attributes
         param_dict = {
@@ -91,6 +91,8 @@ class LegacySpikeAnalysis(AnalysisBase):
                                         file=None,
                                         param_dict=param_dict,
                                         return_summary_frames=True)
+        
+
 
         # Build output dict
         result = spike_df.to_dict(orient="list")
@@ -101,6 +103,10 @@ class LegacySpikeAnalysis(AnalysisBase):
             else:
                 logger.warning(f"LegacySpikeAnalysis: expected single value for {key}, got {len(result[key])} values. Keeping as list.")
                 result[key] = result[key]
+
+        # Extra table -> its own "Running Bin" sheet, merged across files by run_batch.
+        if isinstance(df_running_bin, pd.DataFrame) and not df_running_bin.empty:
+            result["_sheets"] = {"Running Bin": df_running_bin}
         return result
 
 class SpikeAnalysis(AnalysisBase):

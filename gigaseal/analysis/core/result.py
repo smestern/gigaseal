@@ -191,6 +191,19 @@ class AnalysisResult:
         )
         # Stash the pre-built DataFrame so to_dataframe() returns it
         combined._combined_df = combined_df
+
+        # Merge module-supplied extra sheets by name (rows already carry a
+        # ``file`` column, so the merged table stays attributable).
+        merged: "OrderedDict[str, List[pd.DataFrame]]" = OrderedDict()
+        for r in results:
+            if not r.success:
+                continue
+            for sheet_name, frame in r.sheets.items():
+                merged.setdefault(sheet_name, []).append(frame)
+        combined.sheets = {
+            sheet_name: pd.concat(frames, ignore_index=True)
+            for sheet_name, frames in merged.items()
+        }
         return combined
 
     # ------------------------------------------------------------------

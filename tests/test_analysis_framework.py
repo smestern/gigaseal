@@ -187,6 +187,101 @@ class TestSummarySheets:
 
 
 # ======================================================================
+# 1b) Module-supplied extra sheets via the reserved "_sheets" key
+# ======================================================================
+
+class TestExtraSheets:
+    def _per_file_module(self):
+        from gigaseal.analysis.core.base import AnalysisBase
+
+        class BinModule(AnalysisBase):
+            name = "bin_module"
+            sweep_mode = "per_file"
+
+            def analyze(self, x, y, c, **kwargs):
+                bins = pd.DataFrame({"bin": [0, 1], "mean_v": [float(y.mean())] * 2})
+                return {"n_sweeps_seen": y.shape[0], "_sheets": {"Running Bin": bins}}
+
+        return BinModule()
+
+    def _per_sweep_module(self):
+        from gigaseal.analysis.core.base import AnalysisBase
+
+        class SweepBinModule(AnalysisBase):
+            name = "sweep_bin_module"
+            sweep_mode = "per_sweep"
+
+            def analyze(self, x, y, c, **kwargs):
+                return {"max_v": float(y.max()),
+                        "_sheets": {"Bins": pd.DataFrame({"bin": [0, 1, 2]})}}
+
+        return SweepBinModule()
+
+    def test_per_file_sheet_is_popped_and_tagged(self):
+        x, y, c = _make_fake_data_2d(n_sweeps=3)
+        result = self._per_file_module().run(x=x, y=y, c=c)
+        assert result.success
+        assert "_sheets" not in result.data
+        assert "_sheets" not in result.to_dataframe().columns
+        sheet = result.sheets["Running Bin"]
+        assert list(sheet.columns[:1]) == ["file"]
+        assert (sheet["file"] == result.file_path).all()
+        assert len(sheet) == 2
+
+    def test_per_sweep_sheets_accumulate(self):
+        x, y, c = _make_fake_data_2d(n_sweeps=3)
+        result = self._per_sweep_module().run(x=x, y=y, c=c)
+        assert result.success
+        assert all("_sheets" not in s for s in result.sweep_results)
+        sheet = result.sheets["Bins"]
+        assert len(sheet) == 9  # 3 sweeps x 3 bins
+        assert sorted(sheet["sweep_number"].unique()) == [0, 1, 2]
+
+    def test_concatenate_merges_sheets_across_files(self):
+        from gigaseal.analysis.core.result import AnalysisResult
+        module = self._per_file_module()
+        x, y, c = _make_fake_data_2d(n_sweeps=2)
+        r1 = module.run(x=x, y=y, c=c)
+        r2 = module.run(x=x, y=y, c=c)
+        r1.sheets["Running Bin"]["file"] = "a.abf"
+        r2.sheets["Running Bin"]["file"] = "b.abf"
+        failed = AnalysisResult(name="bin_module", file_path="c.abf",
+                                sheets={"Running Bin": pd.DataFrame({"file": ["c.abf"]})})
+        failed.add_error("boom")
+
+        combined = AnalysisResult.concatenate([r1, r2, failed])
+        merged = combined.sheets["Running Bin"]
+        assert list(merged["file"]) == ["a.abf", "a.abf", "b.abf", "b.abf"]
+        assert list(combined.to_sheets().keys()) == ["Running Bin", "Summary", "Raw"]
+
+    def test_save_results_writes_extra_sheet(self, tmp_path):
+        from gigaseal.analysis.core.result import AnalysisResult
+        from gigaseal.analysis.core.runner import save_results
+        x, y, c = _make_fake_data_2d(n_sweeps=2)
+        combined = AnalysisResult.concatenate([self._per_file_module().run(x=x, y=y, c=c)])
+        path = save_results(combined, str(tmp_path), tag="bins")
+        book = pd.read_excel(path, sheet_name=None)
+        assert "Running Bin" in book
+        assert len(book["Running Bin"]) == 2
+
+    def test_non_dict_sheets_warns(self):
+        from gigaseal.analysis.core.base import AnalysisBase
+
+        class BadModule(AnalysisBase):
+            name = "bad_sheets"
+            sweep_mode = "per_file"
+
+            def analyze(self, x, y, c, **kwargs):
+                return {"v": 1, "_sheets": pd.DataFrame({"a": [1]})}
+
+        x, y, c = _make_fake_data_2d(n_sweeps=1)
+        result = BadModule().run(x=x, y=y, c=c)
+        assert result.sheets == {}
+        assert "_sheets" not in result.data
+        assert any("_sheets" in w for w in result.warnings)
+
+
+# ======================================================================
 # 1c) Spec-driven summary aggregation
 # ======================================================================
 
@@ -535,6 +630,21 @@ class TestWithDemoData:
         assert result.success
         df = result.to_dataframe()
         assert "Sweep 003 spike count" in df.columns #the legacy spike analysis names its columns like this, so we check for one of them to confirm it worked
+
+    def test_legacy_spike_running_bin_sheet(self):
+        from gigaseal.analysis import get, run_batch
+        module = get("legacy_spike")
+        result = module.run(file=DEMO_ABF_1)
+        assert result.success
+        assert "_sheets" not in result.data
+        running_bin = result.sheets["Running Bin"]
+        assert not running_bin.empty
+        assert (running_bin["file"] == result.file_path).all()
+
+        combined = run_batch(module, DATA_DIR)
+        assert "Running Bin" in combined.to_sheets()
+        files_in_bin = set(combined.sheets["Running Bin"]["file"])
+        assert len(files_in_bin) >= 2
 
 # ======================================================================
 # 5) Legacy import compatibility

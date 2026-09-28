@@ -106,6 +106,38 @@ module.set_parameters(threshold=-30.0)
 result = module.run(file="recording.abf")
 ```
 
+### Returning Extra Tables (Additional Sheets)
+
+`analyze()` returns one flat dict, which becomes the "Raw" and "Summary"
+sheets. For a secondary table that doesn't fit that shape (for example, the
+legacy running-bin frame), put it under the reserved `"_sheets"` key:
+
+```python
+def analyze(self, x, y, c, **kwargs):
+    features = {...}
+    running_bin_df = ...          # any pandas DataFrame
+    features["_sheets"] = {"Running Bin": running_bin_df}
+    return features
+```
+
+What the framework does with it:
+
+1. **Per file:** `AnalysisBase.run()` pops `"_sheets"` out of the dict, so it
+   never shows up as a column. Each frame gets a `file` column
+   (`per_sweep` modules also get `sweep_number`), and the frame is stored on
+   `result.sheets[name]`. In `per_sweep` mode, frames with the same name are
+   appended sweep by sweep.
+2. **Batch:** `AnalysisResult.concatenate()` (called by `run_batch`) concatenates
+   same-named sheets across all successful files.
+3. **Export / display:** `result.to_sheets()` returns the module sheets first,
+   then `Summary`, then `Raw`. `save_results()` writes one Excel tab per sheet
+   (a `fmt="csv"` request is promoted to xlsx), and the GUI results panel
+   shows each sheet as a tab.
+
+Sheet names are cut to 31 characters on Excel export. `"_sheets"` must be a
+dict; anything else is ignored with a warning on the result. Reference:
+`LegacySpikeAnalysis` in `gigaseal/analysis/spike.py` emits a "Running Bin" sheet.
+
 ---
 
 ## Old API → New API Migration

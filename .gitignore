@@ -369,3 +369,4 @@ gigaseal.egg-info/top_level.txt
 gigaseal.egg-info/*
 assets/*
 !
+.vscode/settings.json

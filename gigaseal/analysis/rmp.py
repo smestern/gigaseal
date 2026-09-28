@@ -6,9 +6,6 @@ mean, median, mode, and drift) with optional action-potential cropping, plus a
 time-resolved running bin of Vm.
 
 Migrated from the legacy ``gigaseal/bin/run_rmp.py`` interactive script.
-The framework plumbing (registration, parameters, batching) is scaffolded
-here; the ``analyze()`` body is left for a human to author/port so the
-lab-specific RMP logic is reviewed rather than machine-generated.
 """
 
 import logging

@@ -150,6 +150,13 @@ class AnalysisBase:
         dict
             A flat dictionary of results.
             Keys become column names in the output DataFrame.
+
+            The reserved key ``"_sheets"`` may hold a ``{sheet_name:
+            DataFrame}`` mapping of extra tables (e.g. a running-bin frame).
+            The framework pops it out of the dict, tags each frame with a
+            ``file`` column (and ``sweep_number`` in per_sweep mode), and
+            stores it on :attr:`AnalysisResult.sheets`, where it is merged
+            across files by ``run_batch`` and exported as its own sheet.
         """
         raise NotImplementedError(
             f"{type(self).__name__} must implement analyze()"
@@ -264,6 +271,7 @@ class AnalysisBase:
                 else:
                     out = {"result": out}
 
+            self._absorb_sheets(out, result, sweep_number=sweep_idx)
             out["sweep_number"] = sweep_idx
             result.sweep_results.append(out)
 
@@ -296,6 +304,7 @@ class AnalysisBase:
             return result
 
         if isinstance(out, dict):
+            self._absorb_sheets(out, result)
             result.data = out
         elif isinstance(out, pd.DataFrame):
             result.data = out.to_dict(orient="list")
@@ -303,6 +312,35 @@ class AnalysisBase:
             result.data = {"result": out}
 
         return result
+
+    @staticmethod
+    def _absorb_sheets(out: dict, result: AnalysisResult, sweep_number=None) -> None:
+        """
+        Move the reserved ``"_sheets"`` entry of *out* onto ``result.sheets``.
+
+        Each frame is tagged with the source ``file`` (and ``sweep_number``
+        when called per sweep).  Frames sharing a sheet name are appended, so
+        per-sweep modules accumulate one table per file.
+        """
+        extra = out.pop("_sheets", None)
+        if extra is None:
+            return
+        if not isinstance(extra, dict):
+            result.add_warning(
+                f"'_sheets' must be a dict of DataFrames, got {type(extra).__name__}; ignored"
+            )
+            return
+        for sheet_name, frame in extra.items():
+            if not isinstance(frame, pd.DataFrame):
+                frame = pd.DataFrame(frame)
+            frame = frame.copy()
+            if sweep_number is not None and "sweep_number" not in frame.columns:
+                frame.insert(0, "sweep_number", sweep_number)
+            if "file" not in frame.columns:
+                frame.insert(0, "file", result.file_path)
+            if sheet_name in result.sheets:
+                frame = pd.concat([result.sheets[sheet_name], frame], ignore_index=True)
+            result.sheets[sheet_name] = frame
 
     # ==================================================================
     # Parameter introspection
