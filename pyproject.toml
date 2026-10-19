@@ -72,5 +72,6 @@ dev = ["torch>=1.10"]
 full = [
     "gigaseal[gui]",
     "gigaseal[web]",
-    "gigaseal[ml]"
+    "gigaseal[ml]",
+    "gigaseal[server]"
 ]

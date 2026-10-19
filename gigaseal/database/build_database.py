@@ -84,6 +84,8 @@ def run_analysis(folder, backend="ipfx", outfile='out.csv', ext="nwb", parallel=
         
     elif backend == "custom":
         # Use custom backend to extract features, this uses the spike_finder and patch_utils method, on the very far backend it uses ipfx, so feature values will more or less be the same
+        raise NotImplementedError("Custom backend is not implemented yet")
+        ##TODO:// SOMETHING LIKE THIS
         results = []
         for f in files:
             # Extract features from each file
@@ -124,39 +126,102 @@ def main():
 #clone the function from ipfx/stimulus_protocol_analysis.py
 # here we will modify it to handle test pulses intelligently, then overwrite the function in ipfx for this session
 
+def find_step_transitions(i, noise_k=8.0, abs_floor_frac=0.005, min_gap=5):
+    """Find square-step edges in a (possibly noisy) command waveform.
+
+    The naive ``np.flatnonzero(np.diff(i))`` treats every sample that differs
+    from its neighbour as an edge, so command currents that carry line noise
+    produce an edge on essentially every sample and the real steps are lost.
+    Instead we threshold the first difference against a robust estimate of the
+    noise floor (MAD of the diff) and collapse each ramped transition -- which
+    spans several samples -- into a single representative index.
+
+    Returns a tuple ``(transition_indices, threshold)``.
+    """
+    i = np.asarray(i, dtype=float)
+    di = np.diff(i)
+    if di.size == 0:
+        return np.array([], dtype=int), 0.0
+    # robust noise estimate from successive differences (MAD -> sigma)
+    med = np.median(di)
+    sigma = 1.4826 * np.median(np.abs(di - med))
+    # absolute floor keeps the threshold > 0 on perfectly clean signals
+    rng = float(np.nanmax(i) - np.nanmin(i))
+    abs_floor = max(abs_floor_frac * rng, 1e-9)
+    thr = max(noise_k * sigma, abs_floor)
+    idx = np.flatnonzero(np.abs(di) > thr)
+    if idx.size == 0:
+        return idx, thr
+    # collapse runs of consecutive indices (a single ramped edge) into one
+    splits = np.flatnonzero(np.diff(idx) > min_gap) + 1
+    groups = np.split(idx, splits)
+    collapsed = np.array([g[0] for g in groups], dtype=int)
+    return collapsed, thr
+
+def _holding_current(i, start_idx):
+    """Holding (bias) current: median of the command before the stimulus starts.
+    The median ignores a short leading test pulse. Returns 0 if there is no pre-stimulus data."""
+    if start_idx is None or start_idx < 1:
+        return 0.0
+    return float(np.median(i[:start_idx]))
+
+def _longest_stim_epoch(i, di_idx, thr):
+    """Split a command waveform at its step edges and return (start_idx, end_idx) of the
+    longest excursion away from the pre-stimulus baseline, or None if none returns to baseline.
+
+    Consecutive off-baseline segments (e.g. a staircase) are merged into a single excursion.
+    Indices follow the get_stim_characteristics convention: start_idx is the first sample of
+    the excursion and end_idx is the diff index of the edge that returns to baseline.
+    """
+    bounds = np.concatenate(([0], np.asarray(di_idx) + 1, [len(i)]))
+    levels = np.array([np.median(i[a:b]) for a, b in zip(bounds[:-1], bounds[1:])])
+    off = np.abs(levels - levels[0]) > max(thr, 1e-9)
+
+    best = None
+    seg = 1
+    while seg < len(levels):
+        if not off[seg]:
+            seg += 1
+            continue
+        first = seg
+        while seg < len(levels) and off[seg]:
+            seg += 1
+        if seg == len(levels): # never returns to baseline, sweep cut off
+            break
+        start_idx, end_idx = bounds[first], bounds[seg] - 1
+        if best is None or (end_idx - start_idx) > (best[1] - best[0]):
+            best = (start_idx, end_idx)
+    return best
+
 def get_stim_characteristics(i, t, test_pulse=True, start_epoch=None, end_epoch=None, test_pulse_length=0.250):
     """
     Identify the start time, duration, amplitude, start index, and end index of a general stimulus.
     """
-    fs = 1/(t[1]  - t[0])
-    di = np.diff(i)
-    di_idx = np.flatnonzero(di)   # != 0
-    start_idx_idx = 0
-    
-    
-    if len(di_idx[start_idx_idx:]) == 0:    # if no stimulus is found
+    # noise-robust edge detection instead of flagging every nonzero diff
+    di_idx, thr = find_step_transitions(i)
+
+    if len(di_idx) == 0:    # if no stimulus is found
         return None, None, 0.0, None, None
 
-    #here we will check if the first up/down is a test pulse, and skip it if it is
-    #we are assuming that the test pulse is within the first 250ms of the stimulus
-    #TODO make this more robust
-    if len(di_idx) > 3: # if there are more than 3 up/down transitions, there is probably a test pulse
-        if (di_idx[1]) < test_pulse_length*fs: # skip the first up/down (test pulse) if present, and with in the first 250ms
-            start_idx_idx = 2
-        else:
-            start_idx_idx = 0
-    elif len(di_idx) < 3:
-        start_idx_idx = 0
-
-    start_idx = di_idx[start_idx_idx] + 1   # shift by one to compensate for diff()
+    start_idx = di_idx[0] + 1   # shift by one to compensate for diff()
     end_idx = di_idx[-1]
+
+    #here we will check for test pulses and skip them if present.
+    #test pulses can come before OR after the main stimulus (e.g. dandiset 001261 has a
+    #trailing -20pA test pulse), so we split the command into excursions away from baseline
+    #and keep the longest one as the stimulus
+    if test_pulse and len(di_idx) > 3: # if there are more than 3 up/down transitions, there is probably a test pulse
+        epoch = _longest_stim_epoch(i, di_idx, thr)
+        if epoch is not None:
+            start_idx, end_idx = epoch
     if start_idx >= end_idx: # sweep has been cut off before stimulus end
         return None, None, 0.0, None, None
 
     start_time = float(t[start_idx])
     duration = float(t[end_idx] - t[start_idx-1])
 
-    stim = i[start_idx:end_idx+1]
+    #measure amplitude relative to the holding current, not raw command
+    stim = i[start_idx:end_idx+1] - _holding_current(i, start_idx)
 
     peak_high = max(stim)
     peak_low = min(stim)
@@ -168,53 +233,38 @@ def get_stim_characteristics(i, t, test_pulse=True, start_epoch=None, end_epoch=
 
     return start_time, duration, amplitude, start_idx, end_idx
 
+
+
+
 ipfx.stim_features.get_stim_characteristics = get_stim_characteristics
 
-def parse_long_pulse_from_dataset(data_set):
-    sweeps = []
-    start_times = []
-    end_times = []
-    for sweep in np.arange(len(data_set.dataY)):
-        i = data_set.dataC[sweep]*1
-        t = data_set.dataX[sweep]
-        v = data_set.dataY[sweep]
-        dt = t[1] - t[0]
-        #if its not current clamp
-        if match_unit(data_set.sweepMetadata[sweep]['stim_dict']["unit"]) != "amp":
-            continue
-        #if the sweep v is in volts, convert to mV, ipfx wants mV
-        if match_unit(data_set.sweepMetadata[sweep]['resp_dict']["unit"]) == "volt":
-            #sometimes the voltage is in volts, sometimes in mV, this is a hack to fix that
-            if np.max(v) > 500 and np.min(v) < -500:
-                #possibly in nV or something else, convert to mV anyway
-                v = v/1000
-            elif np.max(v) < 1 and np.min(v) > -1:
-                #probably in volts, convert to mV
-                v = v*1000
-        
-        #if the sweep i is in amps, convert to pA, ipfx wants pA
-        if match_unit(data_set.sweepMetadata[sweep]['stim_dict']["unit"])=="amp":
-            if np.max(i) < 0.1 and np.min(i) > -0.1:
-                #probably in amp, convert to picoAmps
-                i = np.rint(i*1000000000000).astype(np.float32)
-            else:
-                #probably in pA already
-                i = np.rint(i).astype(np.float32)
-            #sometimes i will have a very small offset, this will remove it
-            i[np.logical_and(i < 0.5, i > -0.5)] = 0
-        if match_protocol(i, t) != "Long Square":
-            continue
-        start_time, duration, amplitude, start_idx, end_idx = get_stim_characteristics(i, t)
-        if start_time is None:
-            continue
-        #construct a sweep obj
-        start_times.append(start_time)
-        end_times.append(start_time+duration)
-        sweep_item = Sweep(t, v, i, clamp_mode="CurrentClamp", sampling_rate=int(1/dt), sweep_number=sweep)
-        sweeps.append(sweep_item)
-    return sweeps, start_times, end_times
+def _group_long_square_runs(start_times, end_times, time_tol=0.005):
+    """Group long square sweeps by step duration: sweeps whose durations match (within time_tol, s)
+    belong to the same protocol, even if the step onset differs (some labs run the hyperpolarizing
+    and depolarizing steps as separate protocols with different onsets). Returns lists of indexes."""
+    durations = np.asarray(end_times) - np.asarray(start_times)
+    groups = []
+    for k, d in enumerate(durations):
+        for g in groups:
+            if abs(d - durations[g[0]]) <= time_tol:
+                g.append(k)
+                break
+        else:
+            groups.append([k])
+    return groups
 
-def data_for_specimen_id(specimen_id, passed_only, data_source, ontology, file_list=None, amp_interval=20, max_above_rheo=100, debug=True):
+def _rank_long_square_group(g, start_times, end_times, amps, volts, target_duration=1.0):
+    """Sort key for picking the run to analyze, lower is better: step duration closest to
+    target_duration, has both hyperpolarizing and depolarizing steps, earliest in the recording
+    (most likely baseline), then most sweeps."""
+    duration = end_times[g[0]] - start_times[g[0]]
+    a = np.asarray(amps)[g]
+    v = np.asarray(volts)[g]
+    coverage = int((a < 0).any()) + int((a > 0).any())
+    vm_coverage = int((v < -60).any()) + int((v > -10).any())
+    return (round(abs(duration - target_duration), 2), -coverage, -vm_coverage, g[0]//10, -len(g))
+
+def data_for_specimen_id(specimen_id, passed_only, data_source, ontology, file_list=None, amp_interval=20, max_above_rheo=None, debug=True):
     
     result = {}
     result["specimen_id"] = file_list[specimen_id]
@@ -234,6 +284,7 @@ def data_for_specimen_id(specimen_id, passed_only, data_source, ontology, file_l
         end_times = []
         stim_amps = []
         debug_log = {}
+        volts_range = []
         for sweep in np.arange(len(data_set.dataY)):
             i = np.nan_to_num(data_set.dataC[sweep]*1)
             t = data_set.dataX[sweep]
@@ -246,8 +297,11 @@ def data_for_specimen_id(specimen_id, passed_only, data_source, ontology, file_l
                 continue
             #if the sweep v is in volts, convert to mV, ipfx wants mV
             if match_unit(data_set.sweepMetadata[sweep]['resp_dict']["unit"]) == "volt":
-                #sometimes the voltage is in volts, sometimes in mV,  even thought it is logged as bolts this is a hack to fix that
-                if np.max(v) > 500 and np.min(v) < -500:
+                #sometimes there is a conversion in there we can use
+                if "conversion" in data_set.sweepMetadata[sweep]['resp_dict']:
+                    v = v / data_set.sweepMetadata[sweep]['resp_dict']["conversion"]
+                #sometimes the voltage is in volts, sometimes in mV,  even thought it is logged as volts this is a hack to fix that
+                if np.max(v) > 500 and np.min(v) < -500: #A real intracellular recording should not reach this right??
                     #possibly in nV or something else, convert to mV anyway
                     v = v/1000
                 elif np.max(v) < 1 and np.min(v) > -1:
@@ -261,7 +315,7 @@ def data_for_specimen_id(specimen_id, passed_only, data_source, ontology, file_l
                     i = i*1000000000000
                 
                 #probably in pA already
-                #i[np.logical_and(i < 5, i > -5)] = 0
+                #i[np.logical_and(i < 5, i > -5)] = 0 #
 
             #try to figure out if this is a long square
             if match_protocol(i, t) != "Long Square":
@@ -282,47 +336,110 @@ def data_for_specimen_id(specimen_id, passed_only, data_source, ontology, file_l
             i = np.round(i, decimals=1) #since we are doing long square, round to nearest 0.1 pA, 
             #if this was ramp or noise or something this is bad.
             #v = np.round(v, decimals=3)
-
+            debug_log[sweep] = f"passed QC {start_time:.3f}-{start_time+duration:.3f}s"
             start_times.append(start_time)
             end_times.append(start_time+duration)
             sweep_item = Sweep(t, v, i, clamp_mode="CurrentClamp", sampling_rate=int(1/dt), sweep_number=sweep)
             sweeps.append(sweep_item)
             stim_amps.append(amplitude)
-        if debug:
-            for sweep in debug_log.keys():
-                print(f"sweep {sweep} failed QC because it was {debug_log[sweep]}")
-                if debug_log[sweep] == "failed QC":
-                    plt.plot(data_set.dataX[sweep], data_set.dataY[sweep], label=f"{sweep} {debug_log[sweep]}", c='r')
-                else:
-                    #plt.plot(data_set.dataX[sweep], data_set.dataY[sweep], label=f"{sweep} {debug_log[sweep]}", c='k')
-                    continue
-                
-            #plt.legend()
-            plt.pause(0.2)
-        if len(sweeps) < 1:
-            return result
-        #get the most common start and end times
-        paired_times = np.hstack((np.array(start_times).reshape(-1,1), np.array(end_times).reshape(-1,1)))
-        #round to the nearest ms to avoid floating point issues
-        paired_times = np.round(paired_times, decimals=3)
-        unique_times, counts = np.unique(paired_times, axis=0, return_counts=True)
-        most_common_idx = np.argmax(counts)
-        start_time, end_time = unique_times[most_common_idx]
-        #index out the sweeps that have the most common start and end times
-        #idx_pass = np.where((np.isclose(np.array(start_times), start_time)) & (np.isclose(np.array(end_times), end_time)))[0]
-        sweeps = SweepSet(np.array(sweeps, dtype=object).tolist())#[idx_pass].tolist())
+            volts_range.append([v.min(), v.max()])
+        #split the passing sweeps into runs of the same protocol, then analyze only the best run
+       
+        groups = _group_long_square_runs(start_times, end_times)
+        if groups:
+            primary = min(groups, key=lambda g: _rank_long_square_group(g, start_times, end_times, stim_amps, volts_range))
+            #onsets can differ within a group, so shift each sweep's time axis to line up on the latest onset
+            start_time = max(start_times[k] for k in primary)
+            end_time = start_time + float(np.median([end_times[k] - start_times[k] for k in primary]))
+            for n, g in enumerate(groups):
+                if g is not primary:
+                    for k in g:
+                        debug_log[sweeps[k].sweep_number] += f", not used (group {n})"
+            result["n_protocol_groups"] = len(groups)
+            result["protocol_groups"] = "|".join(
+                f"{end_times[g[0]] - start_times[g[0]]:.3f}s:" + ",".join(str(sweeps[k].sweep_number) for k in g)
+                for g in groups)
+            sweeps = SweepSet([Sweep(sweeps[k].t + (start_time - start_times[k]), sweeps[k].v, sweeps[k].i,
+                                     clamp_mode="CurrentClamp", sampling_rate=int(round(1 / (sweeps[k].t[1] - sweeps[k].t[0]))),
+                                     sweep_number=sweeps[k].sweep_number) for k in primary])
+        else:
+            logging.error("No long square sweeps passed QC")
+            sweeps = SweepSet([])
+            start_time, end_time = None, None
 
+        # ========== Debugging and QC Visualization ==========
+        if debug:
+            fig, ax = plt.subplots(2, 1) #multiple subplots for QC visualization, one for passed sweeps and one for failed sweeps
+            labelled = (set(), set()) #categories already in each subplot's legend, so we get one legend entry per category rather than per sweep
+            other_colors = {} #distinct color per non-"failed QC" failure category, so the legend entries can be told apart
+            color_cycle = (c for c in plt.cm.tab10.colors[1:] if c != plt.cm.tab10.colors[3]) #skip blue/red, used for start time and "failed QC"
+            def _label(ax_idx, category):
+                if category in labelled[ax_idx]:
+                    return "_nolegend_"
+                labelled[ax_idx].add(category)
+                return category
+            for sweep in debug_log.keys():
+                category = debug_log[sweep]
+                if category.startswith("passed QC"):
+                    print(f"sweep {sweep} {category}")
+                    #plot analyzed sweeps in green, passed sweeps from other protocol runs in orange
+                    ax[1].plot(data_set.dataX[sweep], data_set.dataY[sweep], label=_label(1, category),
+                               c='tab:orange' if "not used" in category else 'g')
+                    continue
+                print(f"sweep {sweep} failed QC because it was {category}")
+                if category == "failed QC":
+                    ax[0].plot(data_set.dataX[sweep], data_set.dataY[sweep], label=_label(0, category), c='r') #plot failed sweeps in red
+                else:
+                    if category not in other_colors:
+                        other_colors[category] = next(color_cycle, 'k') #fall back to black if we run out of colors
+                    ax[0].plot(data_set.dataX[sweep], data_set.dataY[sweep], label=_label(0, category), c=other_colors[category]) #plot other failed sweeps by category
+                    #continue
+            ax[1].axvline(x=start_time, color='b', linestyle='--', label='start time') if start_time is not None else None #mark the most common start time
+            ax[1].axvline(x=end_time, color='m', linestyle='--', label='end time') if end_time is not None else None #mark the most common end time
+            ax[0].legend(loc='right', bbox_to_anchor=(1.2, 0.5))
+            ax[1].legend(loc='right', bbox_to_anchor=(1.2, 0.5))
+
+            dandi_set_no = os.path.dirname(file_list[specimen_id])
+            dir_base = os.path.dirname(file_list[specimen_id])
+            dir_of_the_dir = os.path.dirname(dir_base)
+            os.makedirs(f"{dir_of_the_dir}/debug/{os.path.basename(dir_base)}", exist_ok=True)
+            fig.savefig(f"{dir_of_the_dir}/debug/{os.path.basename(dir_base)}/{os.path.basename(file_list[specimen_id])}.png")
+            plt.close()
+            #plt.pause(0.2)
+
+
+        if len(sweeps.v) < 1: #no valid sweeps to analyze, should log this??
+            return result
+
+
+        # ====== DATA EXTRACTION ======
+        
         lsq_spx, lsq_spfx = dsf.extractors_for_sweeps(
             sweeps,
             start=start_time , #if the start times are not the same, this will fail
             end=end_time, #if the end times are not the same, this will fail
             min_peak=-25,
         )
+
+        #ipfx defaults to a filter @10kHz, this breaks for signals sampled below 20kHz, consider adjusting the filter accordingly
+        # here we are hoping that the slowest sampled sweeps are still above the filter cutoff
+        min_sample_rate = min(sweeps.sampling_rate)
+        if min_sample_rate < 20001: #
+            print(f"Warning: Minimum sample rate is {min_sample_rate} Hz, which may be below the filter cutoff. Adjusting the filter accordingly.")
+            # Adjust the filter cutoff to be below the minimum sample rate
+            filter_cutoff = min_sample_rate / 2
+            filter_cutoff = filter_cutoff * 0.99999  # set the filter cutoff slightly below the Nyquist frequency, since ipfx does not use inclusive Nyquist frequency
+        else:
+            #do nothing, keep the default filter cutoff
+            filter_cutoff = 10000  # default filter cutoff for higher sample rates
+
+        lsq_spx.filter = filter_cutoff / 1000 #in kHz
+
         lsq_an = spa.LongSquareAnalysis(lsq_spx, lsq_spfx,
             subthresh_min_amp=-200.0)
-        if np.mean(start_times) < 0.01:
-           lsq_an.sptx.baseline_interval = np.mean(start_times)*0.1
-           lsq_an.sptx.sag_baseline_interval = np.mean(start_times)*0.1
+        if start_time < 0.01:
+           lsq_an.sptx.baseline_interval = start_time*0.1
+           lsq_an.sptx.sag_baseline_interval = start_time*0.1
         lsq_features = lsq_an.analyze(sweeps)
 
         result.update({
@@ -339,12 +456,21 @@ def data_for_specimen_id(specimen_id, passed_only, data_source, ontology, file_l
         mask_supra = sweep_table["stim_amp"] >= lsq_features["rheobase_i"]
         sweep_indexes = fv._consolidated_long_square_indexes(sweep_table.loc[mask_supra, :])
         amps = np.rint(sweep_table.loc[sweep_indexes, "stim_amp"].values - lsq_features["rheobase_i"])
-        spike_data = np.array(lsq_features["spikes_set"])
+        spike_data = lsq_features["spikes_set"]
 
+        # Assign each sweep to the nearest amp_interval step above rheobase, keeping the
+        # closest sweep per step. Requiring an exact multiple of amp_interval left cells
+        # recorded with other step sizes (e.g. 10, 25, 100 pA) with only the rheobase sweep.
+        best_by_label = {}
         for amp, swp_ind in zip(amps, sweep_indexes):
-            if (amp % amp_interval != 0) or (amp > max_above_rheo) or (amp < 0):
+            amp_label = int(np.floor(amp / amp_interval + 0.5))
+            if (amp < 0) or (max_above_rheo is not None and amp_label * amp_interval > max_above_rheo):
                 continue
-            amp_label = int(amp / amp_interval)
+            offset = abs(amp - amp_label * amp_interval)
+            if amp_label not in best_by_label or offset < best_by_label[amp_label][0]:
+                best_by_label[amp_label] = (offset, amp, swp_ind)
+
+        for amp_label, (_, amp, swp_ind) in sorted(best_by_label.items()):
 
             first_spike_lsq_sweep_features = run_feature_collection.first_spike_lsq(spike_data[swp_ind])
             result.update({"ap_1_{:s}_{:d}_long_square".format(f, amp_label): v
@@ -372,11 +498,9 @@ def data_for_specimen_id(specimen_id, passed_only, data_source, ontology, file_l
 
         #we should record the name of the stimuli used and the sweeps used, for either plotting or debugging
         result["stimulus_name"] = data_set.sweepMetadata[0]['stim_dict']['description']
-        result["sweeps_used"] = sweep_indexes
+        result["sweeps_used"] = np.array2string(sweep_indexes, separator=";", threshold=np.inf, max_line_width=np.inf)
 
-        
 
-        
     except Exception as e:
        print("error with specimen_id: ", specimen_id)
        print(e)
@@ -385,7 +509,7 @@ def data_for_specimen_id(specimen_id, passed_only, data_source, ontology, file_l
     plt.close()
     return result
 
-def find_time_index(t, t_0):
+def find_time_index(t, t_0):#
     """ Find the index value of a given time (t_0) in a time series (t).
 
 
@@ -407,7 +531,71 @@ def find_time_index(t, t_0):
     idx = np.argmin(abs(t - t_0))
     return idx
 
+def voltage_deflection(t, v, i, start, end, deflect_type=None):
+    """Measure deflection (min or max, between start and end if specified).
+
+    Parameters
+    ----------
+    deflect_type : measure minimal ('min') or maximal ('max') voltage deflection
+        If not specified, it will check to see if the current (i) is positive or negative
+        between start and end, then choose 'max' or 'min', respectively
+        If the current is not defined, it will default to 'min'.
+
+    Returns
+    -------
+    deflect_v : peak
+    deflect_index : index of peak deflection
+    """
+
+    deflect_dispatch = {
+        "min": np.argmin,
+        "max": np.argmax,
+    }
+
+    start_index = tsu.find_time_index(t, start)
+    end_index = tsu.find_time_index(t, end)
+
+    if deflect_type is None:
+        if i is not None:
+            halfway_index = tsu.find_time_index(t, (end - start) / 2. + start)
+            if i[halfway_index] >= 0:
+                deflect_type = "max"
+            else:
+                deflect_type = "min"
+        else:
+            deflect_type = "min"
+
+    deflect_func = deflect_dispatch[deflect_type]
+
+    #if the start_and end times are the same, just return the voltage at that time
+    if start_index == end_index:
+        #also ensure 
+        return v[start_index], start_index
+
+    v_window = v[start_index:end_index]
+    deflect_index = deflect_func(v_window) + start_index
+
+    return v[deflect_index], deflect_index
+
+def _step_stim_amp(t, i, start):
+    #stim amp is relative to the holding current, so cells with a bias current get the true step size
+    t_index = tsu.find_time_index(t, start)
+    holding = _holding_current(i, t_index)
+    if t_index + 1 >= len(i):
+        return i[t_index] - holding
+    #take the median over the step (up to the next edge) rather than a single sample,
+    #recorded/filtered commands have ramped edges that are still settling just after onset
+    di_idx, _ = find_step_transitions(i)
+    later = di_idx[di_idx > t_index + 1]
+    end_index = later[0] + 1 if len(later) else len(i)
+    return float(np.median(i[t_index + 1:end_index])) - holding
+
+# monkey patch time
 tsu.find_time_index = find_time_index
+
+ipfx.subthresh_features.voltage_deflection = voltage_deflection
+
+ipfx.stim_features._step_stim_amp = _step_stim_amp
 
 #stimulus protocol analysis functions, here we will guess what stimulus protocol was used, and affix that to the stimulus ontology later
 def get_stimulus_protocols(files, ext="nwb", method='random'):
@@ -449,7 +637,7 @@ def get_stimulus_protocols(files, ext="nwb", method='random'):
     GLOBAL_STIM_NAMES.stim_inc = stim_to_use   
     return copy.deepcopy(GLOBAL_STIM_NAMES)
 
-def match_protocol(i, t, test_pulse=True, start_epoch=None, end_epoch=None, test_pulse_length=0.1):
+def match_protocol(i, t, test_pulse=True, start_epoch=None, end_epoch=None, test_pulse_length=0.25):
     #this function will take a stimulus and return the stimulus protocol at least it will try
     #first we will try to match the stimulus protocol to a known protocol
     #classifier = sc.stimClassifier()
@@ -476,40 +664,47 @@ def match_protocol(i, t, test_pulse=True, start_epoch=None, end_epoch=None, test
 
 def match_long_square_protocol(i, t, start_idx, end_idx):
     #here we will do some analysis to determine if the stimulus is a long square, and if so, what the parameters are
-    fs = 1/(t[1]  - t[0])
+    i = np.asarray(i, dtype=float)
 
-    di = np.diff(i)
-    di_idx = np.flatnonzero(di)   # != 0
+    # noise-robust edge detection instead of flagging every nonzero diff
+    di_idx, thr = find_step_transitions(i)
 
-    if len(di_idx) == 0:
-        #if there are no up/down transitions, then this is not a long square, or a zero-pulse long square but we will just have to accept that for now
+    if len(di_idx) < 2:
+        #zero or one transition -> not a (returning) square step
         return None
-    if len(di_idx) == 1:
-        #if there is only one up/down transition, then this is not a long square
+
+    # A long square holds a flat step and then returns to its pre-step baseline.
+    # We compare robust (median) levels rather than requiring the command to
+    # start/end at exactly 0, because real recordings carry a holding current
+    # and line noise means no sample is ever exactly the baseline value.
+    pre = i[:start_idx]
+    post = i[end_idx + 1:]
+    step = i[start_idx:end_idx + 1]
+    if len(pre) == 0 or len(post) == 0 or len(step) == 0:
         return None
-    #if len(di_idx) > 6:
-        #if there are more than 6 up/down transitions, then this is (probably) not a long square
-      #  return 
-    #check if its a long square by fitting a line to the dataset,
-    #and checking if the slope is 0
-    #if the slope is 0, then it is a long square
-    #if the slope is not 0, then it is not a long square
-    if len(di_idx) > 6:
-        y_data = i[start_idx: end_idx]
-        x_data = t[start_idx: end_idx]
-        slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x_data, y_data)
-        if slope < 0.1 and p_value < 0.05 and r_value > 0.6:
-            return 'Long Square'
-        elif slope > 0.1 and p_value > 0.05:
-            return 'Long Square'
-        else:
+    base_pre = np.median(pre)
+    base_post = np.median(post)
+    step_level = np.median(step)
+    amp = step_level - base_pre
+    noise = max(thr, 1e-9)
+    if abs(amp) < noise:
+        #no real step relative to baseline
+        return None
+
+    # Reject ramps: a square step is flat, so a straight-line fit across the
+    # step region must not drift by a meaningful fraction of the step height.
+    # This guard is unconditional so a ramp can never be flagged as a square,
+    # no matter how many noise crossings its edge detection produced.
+    x_step = t[start_idx:end_idx + 1]
+    if len(x_step) > 2:
+        slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x_step, step)
+        if abs(slope * (x_step[-1] - x_step[0])) > 0.3 * abs(amp):
+            #significant drift across the step -> ramp-like, not a square
             return None
-    #ensure that the stim starts at 0, and ends at 0
-    if i[0] != 0:
+
+    # The command must return to (near) its pre-step baseline after the step.
+    if abs(base_post - base_pre) > 0.5 * abs(amp):
         return None
-    if i[-1] != 0:
-        return None
-    
 
     return "Long Square"
 
