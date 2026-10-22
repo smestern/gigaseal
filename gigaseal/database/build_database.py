@@ -21,6 +21,7 @@ import copy
 #import joblib
 import matplotlib.pyplot as plt
 import scipy.stats
+import scipy.ndimage
 from multiprocessing import pool, freeze_support
 # Import ipfx
 import ipfx
@@ -63,7 +64,7 @@ def glob_files(folder, ext="nwb"):
     return glob.glob(folder + "/**/*." + ext, recursive=True)
 
 
-def run_analysis(folder, backend="ipfx", outfile='out.csv', ext="nwb", parallel=False):
+def run_analysis(folder, backend="ipfx", outfile='out.csv', ext="nwb", parallel=True, n_jobs=4):
     files = glob_files(folder)[::-1]
     file_idx = np.arange(len(files))
     import joblib
@@ -78,9 +79,11 @@ def run_analysis(folder, backend="ipfx", outfile='out.csv', ext="nwb", parallel=
                                 ontology=None,
                                 file_list=files)
         if parallel == True:
-            #Run in parallel
-            parallel = joblib.cpu_count()
-        results = joblib.Parallel(n_jobs=1, backend='multiprocessing')(joblib.delayed(get_data_partial)(specimen_id) for specimen_id in file_idx)
+            if n_jobs is None:
+                n_jobs = joblib.cpu_count()
+            results = joblib.Parallel(n_jobs=n_jobs, backend='multiprocessing')(joblib.delayed(get_data_partial)(specimen_id) for specimen_id in file_idx)
+        else:
+            results = [get_data_partial(specimen_id) for specimen_id in file_idx]
         
     elif backend == "custom":
         # Use custom backend to extract features, this uses the spike_finder and patch_utils method, on the very far backend it uses ipfx, so feature values will more or less be the same
@@ -264,6 +267,112 @@ def _rank_long_square_group(g, start_times, end_times, amps, volts, target_durat
     vm_coverage = int((v < -60).any()) + int((v > -10).any())
     return (round(abs(duration - target_duration), 2), -coverage, -vm_coverage, g[0]//10, -len(g))
 
+def _plausible_vm(v):
+    """True if v (mV) looks like a membrane potential trace: its floor (5th percentile, the resting/AHP
+    level, robust to sweeps that sit depolarized for most of the step) is physiological, it is bounded,
+    and not flat. Exact zeros are ignored, they are padding from aborted sweeps (QC handles those)."""
+    v = v[v != 0]
+    if v.size == 0:
+        return False
+    floor = np.percentile(v, 5)
+    return -150 < floor < -10 and np.max(v) < 150 and np.min(v) > -250 and np.ptp(v) > 0.5
+
+def _choose_volt_scale(v, conversion=None):
+    """Scale a response logged as volts to mV, picking how to apply the NWB conversion by plausibility.
+    The conversion attr is inconsistent across dandisets: sometimes a multiplier (per the NWB spec),
+    sometimes a divisor, sometimes bogus. loadNWB has already multiplied by it, so we try each
+    interpretation (with V, mV and uV units) and keep the first that looks like a membrane potential.
+    Returns (v_mV, description) or (None, reason)."""
+    try:
+        c = float(conversion)
+    except (TypeError, ValueError):
+        c = 1.0
+    if not np.isfinite(c) or c == 0:
+        c = 1.0
+    candidates = [("conversion as multiplier", 0)]
+    if c != 1.0:
+        candidates += [("conversion as divisor", -2), ("conversion ignored", -1)]
+    for name, power in candidates:
+        base = v * c**power
+        for unit_factor in (1e3, 1.0, 1e-3):
+            cand = base * unit_factor
+            if _plausible_vm(cand[::10]): #subsample, stats only
+                return cand, f"{name}, x{unit_factor:g}"
+    return None, "implausible voltage scale"
+
+def split_concatenated_steps(t, i, min_step=0.25, min_steps=3, min_total=5.0, dur_tol=0.005):
+    """Detect a long recording that holds a whole step family played back-to-back (e.g. dandiset
+    001454 records each cell as one ~70s sweep with a 0.5s step every 2s), and return the
+    (start_idx, end_idx) window of each step so it can be analyzed as its own sweep. Each window
+    holds the same baseline before the step onset. Returns None if the trace is not such a recording.
+    i should be in pA."""
+    t = np.asarray(t, dtype=float)
+    i = np.asarray(i, dtype=float)
+    if len(t) < 2 or (t[-1] - t[0]) < min_total:
+        return None
+    dt = t[1] - t[0]
+    #median filter knocks out line noise and spikes in the command, ~5ms window
+    i_f = scipy.ndimage.median_filter(i, size=max(int(round(0.005 / dt)), 1) | 1)
+    #holding current: median of the baseline, refined once excluding the steps
+    hold = np.median(i_f)
+    off = None
+    for _ in range(2):
+        base = i_f if off is None else i_f[~off]
+        thr = max(5.0, 5 * 1.4826 * np.median(np.abs(base - hold)))
+        off = np.abs(i_f - hold) > thr
+        if off.all():
+            return None
+        hold = np.median(i_f[~off])
+    off = np.abs(i_f - hold) > thr
+
+    bounds = np.concatenate(([0], np.flatnonzero(np.diff(off.astype(np.int8))) + 1, [len(i)]))
+    #step excursions that start after and return to baseline
+    runs = np.array([(a, b) for a, b in zip(bounds[:-1], bounds[1:])
+                     if off[a] and a > 0 and b < len(i) and (b - a) * dt > min_step])
+    if len(runs) < min_steps:
+        return None
+    #keep the steps sharing the most common duration
+    durs = (runs[:, 1] - runs[:, 0]) * dt
+    runs = runs[np.abs(durs - np.median(durs)) <= dur_tol]
+    if len(runs) < min_steps:
+        return None
+    onsets, ends = runs[:, 0], runs[:, 1]
+    pre = min(onsets[0], np.min(onsets[1:] - ends[:-1]) // 2)
+    width = np.min(np.diff(onsets))
+    return [(o - pre, min(o - pre + width, len(i))) for o in onsets]
+
+def _iter_current_clamp_traces(data_set):
+    """Yield (sweep_id, t, v, i, skip_reason) for each sweep, with v in mV and i in pA, as ipfx wants.
+    For skipped sweeps t, v, i are None and skip_reason says why. Recordings holding a whole step family
+    back-to-back are split into one trace per step, with sweep_id = sweep*1000 + step index."""
+    for sweep in np.arange(len(data_set.dataY)):
+        meta = data_set.sweepMetadata[sweep]
+        stim_unit = match_unit(meta['stim_dict']["unit"])
+        #if its not current clamp
+        if stim_unit != "amp":
+            yield sweep, None, None, None, f"not current clamp, found units of {stim_unit}"
+            continue
+        i = np.nan_to_num(data_set.dataC[sweep]*1)
+        t = data_set.dataX[sweep]
+        v = np.nan_to_num(data_set.dataY[sweep])
+        #if the sweep v is in volts, convert to mV
+        if match_unit(meta['resp_dict']["unit"]) == "volt":
+            v, how = _choose_volt_scale(v, meta['resp_dict'].get("conversion"))
+            if v is None:
+                yield sweep, None, None, None, how
+                continue
+            log.debug(f"sweep {sweep} voltage scaled with {how}")
+        #if the sweep i is in amps, convert to pA
+        if np.max(i) < 0.1 and np.min(i) > -0.1:
+            i = i*1000000000000
+        windows = split_concatenated_steps(t, i)
+        if windows is None:
+            yield sweep, t, v, i, None
+            continue
+        log.debug(f"sweep {sweep} split into {len(windows)} concatenated steps")
+        for k, (a, b) in enumerate(windows):
+            yield sweep*1000 + k, t[a:b] - t[a], v[a:b], i[a:b], None
+
 def data_for_specimen_id(specimen_id, passed_only, data_source, ontology, file_list=None, amp_interval=20, max_above_rheo=None, debug=True):
     
     result = {}
@@ -285,37 +394,14 @@ def data_for_specimen_id(specimen_id, passed_only, data_source, ontology, file_l
         stim_amps = []
         debug_log = {}
         volts_range = []
-        for sweep in np.arange(len(data_set.dataY)):
-            i = np.nan_to_num(data_set.dataC[sweep]*1)
-            t = data_set.dataX[sweep]
-            v = np.nan_to_num(data_set.dataY[sweep])
-            dt = t[1] - t[0]
-            #if its not current clamp
-            if match_unit(data_set.sweepMetadata[sweep]['stim_dict']["unit"]) != "amp":
-                logging.debug(f"sweep {sweep} is not current clamp")
-                debug_log[sweep] = f"not current clamp, found units of {match_unit(data_set.sweepMetadata[sweep]['stim_dict']['unit'])}"
+        traces = {} #the (t, v) actually analyzed per sweep id, for the debug plot
+        for sweep, t, v, i, skip_reason in _iter_current_clamp_traces(data_set):
+            if skip_reason is not None:
+                logging.debug(f"sweep {sweep} skipped: {skip_reason}")
+                debug_log[sweep] = skip_reason
                 continue
-            #if the sweep v is in volts, convert to mV, ipfx wants mV
-            if match_unit(data_set.sweepMetadata[sweep]['resp_dict']["unit"]) == "volt":
-                #sometimes there is a conversion in there we can use
-                if "conversion" in data_set.sweepMetadata[sweep]['resp_dict']:
-                    v = v / data_set.sweepMetadata[sweep]['resp_dict']["conversion"]
-                #sometimes the voltage is in volts, sometimes in mV,  even thought it is logged as volts this is a hack to fix that
-                if np.max(v) > 500 and np.min(v) < -500: #A real intracellular recording should not reach this right??
-                    #possibly in nV or something else, convert to mV anyway
-                    v = v/1000
-                elif np.max(v) < 1 and np.min(v) > -1:
-                    #probably in volts, convert to mV
-                    v = v*1000
-            
-            #if the sweep i is in amps, convert to pA, ipfx wants pA
-            if match_unit(data_set.sweepMetadata[sweep]['stim_dict']["unit"])=="amp":
-                if np.max(i) < 0.1 and np.min(i) > -0.1:
-                    #probably in amp, convert to picoAmps
-                    i = i*1000000000000
-                
-                #probably in pA already
-                #i[np.logical_and(i < 5, i > -5)] = 0 #
+            traces[sweep] = (t, v)
+            dt = t[1] - t[0]
 
             #try to figure out if this is a long square
             if match_protocol(i, t) != "Long Square":
@@ -359,6 +445,9 @@ def data_for_specimen_id(specimen_id, passed_only, data_source, ontology, file_l
             result["protocol_groups"] = "|".join(
                 f"{end_times[g[0]] - start_times[g[0]]:.3f}s:" + ",".join(str(sweeps[k].sweep_number) for k in g)
                 for g in groups)
+            #record the raw sweep ids (and stim amps) of the analyzed run, so plot_data can reuse them without re-deriving
+            result["analyzed_sweeps"] = ";".join(f"{sweeps[k].sweep_number}:{stim_amps[k]:.1f}" for k in primary)
+            result["analyzed_window"] = f"{start_time:.4f}-{end_time:.4f}"
             sweeps = SweepSet([Sweep(sweeps[k].t + (start_time - start_times[k]), sweeps[k].v, sweeps[k].i,
                                      clamp_mode="CurrentClamp", sampling_rate=int(round(1 / (sweeps[k].t[1] - sweeps[k].t[0]))),
                                      sweep_number=sweeps[k].sweep_number) for k in primary])
@@ -383,16 +472,16 @@ def data_for_specimen_id(specimen_id, passed_only, data_source, ontology, file_l
                 if category.startswith("passed QC"):
                     print(f"sweep {sweep} {category}")
                     #plot analyzed sweeps in green, passed sweeps from other protocol runs in orange
-                    ax[1].plot(data_set.dataX[sweep], data_set.dataY[sweep], label=_label(1, category),
+                    ax[1].plot(*traces[sweep], label=_label(1, category),
                                c='tab:orange' if "not used" in category else 'g')
                     continue
                 print(f"sweep {sweep} failed QC because it was {category}")
                 if category == "failed QC":
-                    ax[0].plot(data_set.dataX[sweep], data_set.dataY[sweep], label=_label(0, category), c='r') #plot failed sweeps in red
+                    ax[0].plot(*(traces[sweep] if sweep in traces else (data_set.dataX[sweep], data_set.dataY[sweep])), label=_label(0, category), c='r') #plot failed sweeps in red
                 else:
                     if category not in other_colors:
                         other_colors[category] = next(color_cycle, 'k') #fall back to black if we run out of colors
-                    ax[0].plot(data_set.dataX[sweep], data_set.dataY[sweep], label=_label(0, category), c=other_colors[category]) #plot other failed sweeps by category
+                    ax[0].plot(*(traces[sweep] if sweep in traces else (data_set.dataX[sweep], data_set.dataY[sweep])), label=_label(0, category), c=other_colors[category]) #plot other failed sweeps by category
                     #continue
             ax[1].axvline(x=start_time, color='b', linestyle='--', label='start time') if start_time is not None else None #mark the most common start time
             ax[1].axvline(x=end_time, color='m', linestyle='--', label='end time') if end_time is not None else None #mark the most common end time
@@ -421,17 +510,13 @@ def data_for_specimen_id(specimen_id, passed_only, data_source, ontology, file_l
             min_peak=-25,
         )
 
-        #ipfx defaults to a filter @10kHz, this breaks for signals sampled below 20kHz, consider adjusting the filter accordingly
-        # here we are hoping that the slowest sampled sweeps are still above the filter cutoff
+        #ipfx defaults to a filter @10kHz, this breaks for signals sampled at or below 20kHz, so cap it below Nyquist.
+        #Do NOT put the cutoff right at Nyquist (we used to use 0.99999*Nyquist): the 4-pole bessel then has a pole
+        #just outside the unit circle, filtfilt grows ~1.0001^N, and long sweeps give dv/dt up to ~1e23 mV/ms
         min_sample_rate = min(sweeps.sampling_rate)
-        if min_sample_rate < 20001: #
-            print(f"Warning: Minimum sample rate is {min_sample_rate} Hz, which may be below the filter cutoff. Adjusting the filter accordingly.")
-            # Adjust the filter cutoff to be below the minimum sample rate
-            filter_cutoff = min_sample_rate / 2
-            filter_cutoff = filter_cutoff * 0.99999  # set the filter cutoff slightly below the Nyquist frequency, since ipfx does not use inclusive Nyquist frequency
-        else:
-            #do nothing, keep the default filter cutoff
-            filter_cutoff = 10000  # default filter cutoff for higher sample rates
+        filter_cutoff = min(10000, 0.8 * min_sample_rate / 2)
+        if filter_cutoff < 10000:
+            print(f"Warning: Minimum sample rate is {min_sample_rate} Hz, lowering the dv/dt filter cutoff to {filter_cutoff:.0f} Hz.")
 
         lsq_spx.filter = filter_cutoff / 1000 #in kHz
 
@@ -502,10 +587,10 @@ def data_for_specimen_id(specimen_id, passed_only, data_source, ontology, file_l
 
 
     except Exception as e:
-       print("error with specimen_id: ", specimen_id)
-       print(e)
-       plt.close()
-       return result
+        print("error with specimen_id: ", specimen_id)
+        print(e)
+        plt.close()
+        return result
     plt.close()
     return result
 
@@ -522,7 +607,9 @@ def find_time_index(t, t_0):#
     -------
     idx: index of t closest to t_0
     """
-    if t[0] <= t_0 <= t[-1]: f"Given time ({t_0}) is outside of time range ({t[0]}, {t[-1]})"
+    if not (t[0] <= t_0 <= t[-1]):
+        f"Given time ({t_0}) is outside of time range ({t[0]}, {t[-1]})"
+        
     if t_0 < t[0]:
         t_0 = t[0]
     if t_0 > t[-1]:
@@ -767,12 +854,38 @@ def QC_voltage_data(t,v,i, zero_threshold=0.2, noise_threshold=10):
     return 1
 
 
-def build_dataset_traces(folder, ids =None, ext="nwb", parallel=True):
+def _sweeps_from_row(row):
+    """Get the raw sweep ids of the long square run data_for_specimen_id analyzed, from its output CSV row.
+    Uses analyzed_sweeps if present, otherwise falls back to older CSVs: sweeps_used holds positions within the
+    analyzed run (ipfx resets the index), so pick the protocol group they fit in, preferring the step closest to 1s
+    (same first key as _rank_long_square_group). Returns a list of sweep ids, or None if the row has no usable info."""
+    if row is None:
+        return None
+    analyzed = row.get("analyzed_sweeps")
+    if isinstance(analyzed, str) and analyzed:
+        return [int(x.split(":")[0]) for x in analyzed.split(";")]
+    sweeps_used, groups = row.get("sweeps_used"), row.get("protocol_groups")
+    if not isinstance(sweeps_used, str) or not isinstance(groups, str):
+        return None
+    positions = [int(x) for x in sweeps_used.strip("[]").replace(";", " ").split()]
+    parsed = []
+    for g in groups.split("|"):
+        duration, ids = g.split(":")
+        parsed.append((float(duration.rstrip("s")), [int(x) for x in ids.split(",")]))
+    fits = [(d, ids) for d, ids in parsed if not positions or max(positions) < len(ids)]
+    if not fits:
+        return None
+    return min(fits, key=lambda x: round(abs(x[0] - 1.0), 2))[1]
+
+def build_dataset_traces(folder, ids =None, ext="nwb", parallel=True, sweep_info=None):
     #this function will take a run_analysis function and return a dataset of traces
+    #sweep_info is an optional {id: csv row} of data_for_specimen_id output, keyed like ids, so plot_data can reuse the analyzed sweeps
     files = glob_files(folder)[::-1]
     if ids is not None:
         files_check = [x.split("/dandi")[-1] in ids for x in files]
         files = np.array(files)[files_check]
+    sweep_info = sweep_info or {}
+    rows = [next((r for k, r in sweep_info.items() if f.endswith(k)), None) for f in files]
 
     file_idx = np.arange(len(files))
     GLOBAL_STIM_NAMES.stim_inc = ['']
@@ -783,11 +896,14 @@ def build_dataset_traces(folder, ids =None, ext="nwb", parallel=True):
     else:
         parallel = 1
     #results = joblib.Parallel(n_jobs=parallel)(joblib.delayed(plot_data)(specimen_id, files) for specimen_id in file_idx)
-    results = [plot_data(specimen_id, files) for specimen_id in file_idx]
+    results = [plot_data(specimen_id, files, sweep_info=rows[specimen_id]) for specimen_id in file_idx]
 
 
 
-def plot_data(specimen_id, file_list=None, target_amps=[-100, -20, 20, 100, 150, 250, 500, 1000], overwrite=False, save=True, stim_override=None) -> dict:
+def plot_data(specimen_id, file_list=None, target_amps=[-100, -20, 20, 100, 150, 250, 500, 1000], overwrite=False, save=True, stim_override=None, sweep_info=None) -> dict:
+    #sweep_info is this file's row of data_for_specimen_id output (dict or Series); if given, plot the sweeps it analyzed
+    #rather than re-deriving the long square run
+    sweep_ids = _sweeps_from_row(sweep_info)
     result = {}
     if os.path.exists(f"{file_list[specimen_id]}.svg") and overwrite == False:
         print(f"skipping {file_list[specimen_id]} because it already exists")
@@ -814,44 +930,25 @@ def plot_data(specimen_id, file_list=None, target_amps=[-100, -20, 20, 100, 150,
     end_times = []
     sweep_amp = []
     debug_log = {}
-    for sweep in np.arange(len(data_set.dataY)):
-        i = np.nan_to_num(data_set.dataC[sweep]*1)
-        t = data_set.dataX[sweep]
-        v = np.nan_to_num(data_set.dataY[sweep])
+    for sweep, t, v, i, skip_reason in _iter_current_clamp_traces(data_set):
+        if skip_reason is not None:
+            logging.debug(f"sweep {sweep} skipped: {skip_reason}")
+            continue
         dt = t[1] - t[0]
-        #if its not current clamp
-        if match_unit(data_set.sweepMetadata[sweep]['stim_dict']["unit"]) != "amp":
-            logging.debug(f"sweep {sweep} is not current clamp")
-            #debug_log[sweep] = "not current clamp"
-            continue
-        #if the sweep v is in volts, convert to mV, ipfx wants mV
-        if match_unit(data_set.sweepMetadata[sweep]['resp_dict']["unit"]) == "volt":
-            #sometimes the voltage is in volts, sometimes in mV,  even thought it is logged as bolts this is a hack to fix that
-            if np.max(v) > 500 and np.min(v) < -500:
-                #possibly in nV or something else, convert to mV anyway
-                v = v/1000
-            elif np.max(v) < 1 and np.min(v) > -1:
-                #probably in volts, convert to mV
-                v = v*1000
-        
-        #if the sweep i is in amps, convert to pA, ipfx wants pA
-        if match_unit(data_set.sweepMetadata[sweep]['stim_dict']["unit"])=="amp":
-            if np.max(i) < 0.1 and np.min(i) > -0.1:
-                #probably in amp, convert to picoAmps
-                i = i*1000000000000
-            
-            #probably in pA already
-            #i[np.logical_and(i < 5, i > -5)] = 0
-
-        #try to figure out if this is a long square
-        if match_protocol(i, t) != "Long Square":
-            logging.debug(f"skipping sweep {sweep} because it is not a long square")
-            debug_log[sweep] = "likely not a long square"
-            continue
+        if sweep_ids is not None:
+            #these already passed protocol matching and QC in data_for_specimen_id
+            if sweep not in sweep_ids:
+                continue
+        else:
+            #try to figure out if this is a long square
+            if match_protocol(i, t) != "Long Square":
+                logging.debug(f"skipping sweep {sweep} because it is not a long square")
+                debug_log[sweep] = "likely not a long square"
+                continue
 
         start_time, duration, amplitude, start_idx, end_idx = get_stim_characteristics(i, t)
 
-        if QC_voltage_data(t, v, i) == 0:
+        if sweep_ids is None and QC_voltage_data(t, v, i) == 0:
             logging.debug(f"skipping sweep {sweep} because it failed QC")
             debug_log[sweep] = "failed QC"
             continue
@@ -862,11 +959,19 @@ def plot_data(specimen_id, file_list=None, target_amps=[-100, -20, 20, 100, 150,
         sweeps.append(Sweep(t, v, i, clamp_mode="CurrentClamp", sampling_rate=int(1/dt), sweep_number=sweep))
     if len(sweeps) < 1:
         return result
-    #get the most common start and end times
-    start_time = scipy.stats.mode(np.array(start_times))[0]
-    end_time = scipy.stats.mode(np.array(end_times))[0]
-    #index out the sweeps that have the most common start and end times
-    idx_pass = np.where((np.array(start_times) == start_time) & (np.array(end_times) == end_time))[0]
+    if sweep_ids is not None:
+        #same alignment as data_for_specimen_id: shift each sweep onto the latest onset
+        start_time = max(start_times)
+        end_time = start_time + float(np.median(np.array(end_times) - np.array(start_times)))
+        sweeps = [Sweep(s.t + (start_time - st), s.v, s.i, clamp_mode="CurrentClamp", sampling_rate=s.sampling_rate,
+                        sweep_number=s.sweep_number) for s, st in zip(sweeps, start_times)]
+        idx_pass = np.arange(len(sweeps))
+    else:
+        #get the most common start and end times
+        start_time = scipy.stats.mode(np.array(start_times))[0]
+        end_time = scipy.stats.mode(np.array(end_times))[0]
+        #index out the sweeps that have the most common start and end times
+        idx_pass = np.where((np.array(start_times) == start_time) & (np.array(end_times) == end_time))[0]
 
     sweep_amp_filter = np.array(sweep_amp)[idx_pass]
     if len(sweep_amp_filter) < 1:
