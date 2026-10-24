@@ -2,7 +2,7 @@
     "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
     "python.terminal.activateEnvironment": true,
     "python.testing.pytestArgs": [
-        "tests"
+        "M:\\Users\\SMest\\source\\repos\\smestern\\gigaseal"
     ],
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,

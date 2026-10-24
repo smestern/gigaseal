@@ -11,9 +11,8 @@ import shutil
 import pandas as pd
 import numpy as np
 from joblib import dump, load
-from gigaseal.featureExtractor import batch_feature_extract, save_data_frames, analyze_spike_times, analyze_subthres
+from gigaseal.featureExtractor import batch_feature_extract, save_data_frames, analyze_spike_times, analyze_subthres, save_subthres_data
 from gigaseal.patch_utils import load_protocols
-from gigaseal.ipfx_df import save_subthres_data
 import gigaseal.utils as utils
 #from gigaseal.analysis import SpikeAnalysisModule
 import glob
@@ -51,7 +50,7 @@ HAS_DEMO_DATA = len(DEMO_ABFS) >= 1
 
 # The ``test_full_*`` tests run over a large local dataset (not in the repo) and
 # are opt-in only. Set GIGASEAL_RUN_FULL_TESTS=1 to enable them.
-RUN_FULL_TESTS = os.getenv('GIGASEAL_RUN_FULL_TESTS', '').lower() in ('1', 'true', 'yes')
+RUN_FULL_TESTS = True#os.getenv('GIGASEAL_RUN_FULL_TESTS', '').lower() in ('1', 'true', 'yes')
 _FULL_SKIP_REASON = "Full-dataset test; set GIGASEAL_RUN_FULL_TESTS=1 to opt in (requires local data)."
 
 #

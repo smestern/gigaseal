@@ -23,4 +23,3 @@ except ImportError:
 from . import patch_utils
 from . import dataset
 from . import featureExtractor
-from . import ipfx_df
