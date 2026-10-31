@@ -85,8 +85,20 @@ def analyze_sweep(x=None, y=None, c=None, param_dict=DEFAULT_DICT, bessel_filter
         spike_in_sweep (pd.DataFrame): The dataframe that contains the standard ipfx features for the sweep
         spike_train (pd.DataFrame): The dataframe that contains the standard ipfx features for the consecutive spikes in the sweep
     """ 
-    spikext = feature_extractor.SpikeFeatureExtractor(**param_dict)
-    spiketxt = feature_extractor.SpikeTrainFeatureExtractor(start=param_dict['start'], end=param_dict['end'])  
+    spikext_params = param_dict.copy()
+    #only pass the parameters relevant to the spike extractor
+    for key in list(spikext_params.keys()):
+        if key not in feature_extractor.SpikeFeatureExtractor.__init__.__code__.co_varnames:
+            spikext_params.pop(key)
+
+    #check end handling
+    if 'end' not in spikext_params:
+        spikext_params['end'] = param_dict['end']
+    if spikext_params['end'] is None or spikext_params['end'] <= 0:
+        spikext_params['end'] = x[-1] if x is not None else None
+
+    spikext = feature_extractor.SpikeFeatureExtractor(**spikext_params)
+    spiketxt = feature_extractor.SpikeTrainFeatureExtractor(start=spikext_params['start'], end=spikext_params['end'])  
     #if the user asks for a filter, apply it
     if bessel_filter is not None:
         if bessel_filter != -1:
@@ -264,7 +276,7 @@ analysis_temp_doc_string = """ This function will run the ipfx feature extractor
                             """
 
 
-def analyze_template(x=None, y=None, c=None, file=None, param_dict=DEFAULT_DICT, feature_keys=[''], return_array=True):
+def analyze_template(x=None, y=None, c=None, file=None, param_dict=DEFAULT_DICT, feature_keys=[''], full_run=False, return_array=True):
     """ This function will run the ipfx feature extractor on a single sweep or set of sweeps. And return specific dataframes based on the feature_keys.
     useful for when we only need a subset of the features, eg. spike_times, spike_times_isi, spike_times_isi_sweepwise
     takes:
@@ -278,8 +290,19 @@ def analyze_template(x=None, y=None, c=None, file=None, param_dict=DEFAULT_DICT,
     returns:
         df_raw (pd.DataFrame): The dataframe that contains the standard ipfx features for the sweep
     """
-
-    spike_count_df, df_raw, running_bin = analyze(x, y, c, file=file, param_dict=param_dict, return_summary_frames=True)
+    if full_run:
+        spike_count_df, df_raw, running_bin = analyze(x, y, c, file=file, param_dict=param_dict, return_summary_frames=True)
+    else:
+        data = parse_user_input(x, y, c, file)
+        # use analyze sweep
+        df_raws = []
+        for sweep in data.sweepList:
+            df_raw, running_bin = analyze_sweep(data.dataX[sweep], data.dataY[sweep], data.dataC[sweep], param_dict=param_dict)
+            df_raw['file_name'] = file
+            df_raw['sweep Number'] = sweep
+            df_raws.append(df_raw)
+        df_raw = pd.concat(df_raws, ignore_index=True)
+        
 
     #index the dataframe by the filename, sweep
     #sometimes there are no spikes, so we need to check if the dataframe has sweep Number
@@ -290,8 +313,9 @@ def analyze_template(x=None, y=None, c=None, file=None, param_dict=DEFAULT_DICT,
 
     #if we only want a subset of the features
     if feature_keys != ['']:
+        if df_raw.empty:
+            return np.array([]) if return_array else pd.DataFrame()
         df_raw = df_raw[feature_keys]
-    
     if return_array:
         return df_raw.to_numpy()
     
@@ -382,18 +406,28 @@ def _custom_full_features(x,y,c, param_dict, spike_df):
 
     #compute (or try to) some subthreshold features
     #calculate the sag
-    decay_fast, decay_slow, curve, r_squared_2p, r_squared_1p, _ = exp_decay_factor(x[0], np.nanmean(y, axis=0), np.nanmean(c, axis=0), 3000)
-    spike_df["Taum (Fast)"] = [decay_fast]
-    spike_df["Taum (Slow)"] = [decay_slow]
-    spike_df["Curve fit A"] = [curve[0]]
-    spike_df["Curve fit b1"] = [curve[1]]
-    spike_df["Curve fit b2"] = [curve[3]]
-    spike_df["R squared 2 phase"] = [r_squared_2p]
-    spike_df["R squared 1 phase"] = [r_squared_1p]
-    if r_squared_2p > r_squared_1p:
-        spike_df["Best Fit"] = [2]
-    else:
-        spike_df["Best Fit"] = [1]
+    try:
+        decay_fast, decay_slow, curve, r_squared_2p, r_squared_1p, _ = exp_decay_factor(x[0], np.nanmean(y, axis=0), np.nanmean(c, axis=0), 3000)
+        spike_df["Taum (Fast)"] = [decay_fast]
+        spike_df["Taum (Slow)"] = [decay_slow]
+        spike_df["Curve fit A"] = [curve[0]]
+        spike_df["Curve fit b1"] = [curve[1]]
+        spike_df["Curve fit b2"] = [curve[3]]
+        spike_df["R squared 2 phase"] = [r_squared_2p]
+        spike_df["R squared 1 phase"] = [r_squared_1p]
+        if r_squared_2p > r_squared_1p:
+            spike_df["Best Fit"] = [2]
+        else:
+            spike_df["Best Fit"] = [1]
+    except:
+        spike_df["Taum (Fast)"] = [np.nan]
+        spike_df["Taum (Slow)"] = [np.nan]
+        spike_df["Curve fit A"] = [np.nan]
+        spike_df["Curve fit b1"] = [np.nan]
+        spike_df["Curve fit b2"] = [np.nan]
+        spike_df["R squared 2 phase"] = [np.nan]
+        spike_df["R squared 1 phase"] = [np.nan]
+        spike_df["Best Fit"] = [np.nan]
     return spike_df
 
 

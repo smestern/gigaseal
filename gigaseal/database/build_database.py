@@ -33,7 +33,8 @@ def glob_files(folder, ext="nwb"):
 
 
 def run_analysis(folder, backend="ipfx", outfile='out.csv', ext="nwb", parallel=False, n_jobs=4):
-    #TODO: per-file feature extraction for a folder of ABF/NWB files, returning a DataFrame indexed by specimen_id
+    #TODO: per-file feature extraction for a folder of ABF/NWB files, returning a DataFrame indexed by specimen_id.
+    #For long squares: loadNWB(f, return_obj=True) -> long_square.select_long_square_run -> long_square.long_square_features
     raise NotImplementedError("per-file extraction not implemented yet; see dandi_scraper.extract for the DANDI pipeline")
 
 
