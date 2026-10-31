@@ -14,7 +14,8 @@ from .dataset import cellData
 logger = logging.getLogger(__name__)
 
 def build_running_bin(array, time, start, end, bin=20, time_units='s', kind='nearest'):
-    """ Builds a running bin of the data. The data is binned into bins of size 'bin' and the mean of the data in each bin is calculated. 
+    """ 
+    Builds a running bin of the data. The data is binned into bins of size 'bin' and the mean of the data in each bin is calculated. 
     If there are any NaN values in the binned data, they are replaced with the mean of the data in that bin.
     If there are no NaN values, the binned data is returned as is.
     Parameters
