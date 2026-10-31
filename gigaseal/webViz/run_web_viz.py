@@ -21,7 +21,7 @@ def run_web_viz(dir_path=None, database_file=None, config=None, backend='static'
         output_dir = os.path.join(dir_path, 'output')
         os.makedirs(output_dir, exist_ok=True)
         database_file = os.path.join(output_dir, 'database.csv')
-        build_database.main(['--folder', dir_path, '--outfile', database_file])
+        build_database.main([dir_path, '--outfile', database_file])
 
     if config is None:
         config = webVizConfig.webVizConfig()
