@@ -82,6 +82,18 @@ primary_label: null                 # Primary categorical label (if available)
 # Rename columns from your database for better display
 col_rename: {}                      # Example: {'old_name': 'New Display Name'}
 
+# ============ Card Table Layout (static, optional) ============
+# Set table_style: cards (with hidden_table: true) to render each row as a card
+# with a header strip, trace | feature grid | FI panels, search/sort toolbar and
+# UMAP linking. Leave null for the legacy table.
+table_style: null
+trace_base_url: ./data/traces/      # Base URL for <ID>.svg / <ID>_FI.svg trace plots
+trace_base_overrides: {}            # Per ID-prefix base URL, e.g. {'001538': 'https://host/traces/'}
+card_badges: []                     # Columns shown as badges in the card header
+card_features: []                   # Columns (or {col, label, unit, log10}) shown in the feature grid
+search_cols: []                     # Columns matched by the toolbar search box
+drop_cols: []                       # Columns omitted from the exported data.js
+
 # ============ Pre-generation Options ============
 pre_static_plot_gen: false          # Pre-generate static SVG plots (slower but no server needed)
 
