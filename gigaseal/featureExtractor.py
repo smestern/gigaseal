@@ -1,7 +1,8 @@
 """
-_______
-This is now a deprecated file, and will be removed in a future release. Please see analysis module for the new feature extractor. 
-This file is kept for backwards compatibility, but will be removed in a future release.
+This file is intened to hold functional interfaces for running the analysis code found in .analysis module.
+It currently contains a nightmare of legacy code and experimental features.
+
+The current API is unstable and will be subject to change in future releases.
 """
 
 import glob
