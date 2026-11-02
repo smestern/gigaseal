@@ -152,7 +152,7 @@ def half_sample_mode(data):
     return float(np.mean(x))
 
 
-def rmp_mode(dataV, dataC=None, round_factor=10, method='mode'):
+def rmp_mode(dataV, dataC=None, round_factor=10, method='hsm'): #now defaults to hsm
     """Compute the resting membrane potential from the voltage trace before the stimulus.
 
     Args:
@@ -160,9 +160,8 @@ def rmp_mode(dataV, dataC=None, round_factor=10, method='mode'):
         dataC (np.array): the current data
         round_factor (int, optional): rounding factor for the binned mode. Defaults to 10
             (0.1mV resolution). Set to 1 for 1mV resolution. Ignored when method='hsm'.
-        method (str, optional): 'mode' (default) uses the binned/rounded mode; 'hsm' uses
-            the resolution-free half-sample mode, which is more precise and avoids the
-            bin-edge sensitivity of the rounded mode. Defaults to 'mode'.
+        method (str, optional): 'hsm' (default) uses the resolution-free half-sample mode; 'mode' uses
+            the binned/rounded mode, which is less precise and sensitive to the choice of bin edges. Defaults to 'hsm'.
     Returns:
         float: the resting membrane potential
     """
