@@ -48,7 +48,15 @@ class webVizConfig():
         self.plots_path = None
         self.output_path = './'
         self.ext='.abf'
-        
+        # Static "cards" table layout (opt-in; None keeps the legacy table)
+        self.table_style = None
+        self.trace_base_url = './data/traces/'
+        self.trace_base_overrides = {}  # ID prefix (text before first '/') -> base URL
+        self.card_badges = []
+        self.card_features = []  # column name, or {col, label, unit, log10}
+        self.search_cols = []
+        self.drop_cols = []  # columns left out of the exported data.js
+
         # Update with provided kwargs first
         self.__dict__.update(kwargs)
         

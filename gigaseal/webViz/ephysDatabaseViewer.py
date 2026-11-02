@@ -219,10 +219,35 @@ def main(database_file=None, config=None, static=False):
         new_names.append(temp)
     full_dataframe['foldername'] = new_names #add the new foldername column
 
+    cards = config.table_style == 'cards'
+
+    #drop columns the page never reads, keeping anything the plots/cards depend on
+    if config.drop_cols:
+        def _flatten(items):
+            for item in items:
+                if isinstance(item, dict):
+                    for k, v in item.items():
+                        yield k
+                        yield from _flatten(v if isinstance(v, list) else [v])
+                elif isinstance(item, list):
+                    yield from _flatten(item)
+                else:
+                    yield item
+        card_feature_cols = [x['col'] if isinstance(x, dict) else x for x in (config.card_features or [])]
+        protected = set(_flatten([*config.umap_labels, *config.para_vars, *(config.card_badges or []),
+                                  *(config.search_cols or []), *card_feature_cols, 'ID', 'Umap X', 'Umap Y', 'label',
+                                  config.file_index, config.para_var_colors]))
+        to_drop = [x for x in config.drop_cols if x in full_dataframe.columns and x not in protected]
+        skipped = [x for x in config.drop_cols if x in protected]
+        if skipped:
+            logger.warning(f"Not dropping columns used by the page: {skipped}")
+        full_dataframe = full_dataframe.drop(columns=to_drop)
+
 
     def table_prettier(parsed):
         for i, dict_data in enumerate(parsed):
-            dict_data['y'] = plot_data[i]
+            if not cards: #the card layout loads traces by ID, not by csv path
+                dict_data['y'] = plot_data[i]
             for key, value in dict_data.items():
                 if isinstance(value, np.int64):
                     dict_data[key] = int(value)
@@ -266,18 +291,12 @@ def main(database_file=None, config=None, static=False):
 
     json_full = "var subtables = " + json.dumps(subtables) + " \n "
 
-    json_df = full_dataframe.to_json(orient='records')
-    parsed = json.loads(json_df)
-    if static:
-        parsed = table_prettier(parsed)
-       
-    json_str = json.dumps(parsed)
-
     #open our template, and insert the json data
     if config.table_split is not None:
         json_var = f" var data_tb = subtables['{config.split_default}']"
     else:
-        json_var = '  var data_tb = ' + json_str + ' '
+        #reuse the single subtable rather than serialising the whole table a second time
+        json_var = "  var data_tb = subtables[''] "
 
 
     #script
@@ -351,11 +370,18 @@ def main(database_file=None, config=None, static=False):
                 table_head.append(test)
         else:
             #our actual columns are just then
-            _true_visible = np.hstack((config.file_index, '_plot', '_ephys', '_plot_fi'))
-            if len(link_cols) > 0:
-                _true_visible = np.hstack((_true_visible, '_link'))
+            if cards:
+                #one column; cardFormatter (index.html) renders the whole card from the row
+                _true_visible = np.array(['_card'])
+            else:
+                _true_visible = np.hstack((config.file_index, '_plot', '_ephys', '_plot_fi'))
+                if len(link_cols) > 0:
+                    _true_visible = np.hstack((_true_visible, '_link'))
             for col in _true_visible:
-                if '_plot' in col:
+                if col == '_card':
+                    test = gen_table_head_str_(col, soup, dict_args={'data-formatter': 'cardFormatter', 'data-class': 'card-cell'})
+                    test.string = f""
+                elif '_plot' in col:
                     test = soup.new_tag(f"th")
                     test['data-field'] = f"{col}"
                     test['data-formatter'] = f"plotFormatterDummy"
@@ -488,9 +514,22 @@ def main(database_file=None, config=None, static=False):
     output_template_path = os.path.join(config.output_path, "assets", template_filename)
     with open(output_template_path, "w") as outf:
         outf.write(template_js)
+    #page settings read by the global formatters in index.html and by template.js
+    webviz_cfg = {
+        'table_style': config.table_style,
+        'trace_base_url': config.trace_base_url,
+        'trace_base_overrides': config.trace_base_overrides or {},
+        'title_col': config.file_index,
+        'card_badges': [x for x in (config.card_badges or []) if x in full_dataframe.columns],
+        'card_features': [x for x in (config.card_features or [])
+                          if (x['col'] if isinstance(x, dict) else x) in full_dataframe.columns],
+        'links': link_cols,
+        'search_cols': [x for x in (config.search_cols or []) if x in full_dataframe.columns],
+    }
+    json_cfg = "var webviz_cfg = " + json.dumps(webviz_cfg) + " \n"
     #this si instered into the assets/data.js file
     with open(os.path.join(config.output_path, "assets/data.js"), "w") as outf:
-        outf.write(json_split_strs+ json_full + json_var)   
+        outf.write(json_cfg + json_split_strs+ json_full + json_var)
     #save the final csv
     full_dataframe.to_csv(os.path.join(config.output_path, "data.csv"), index=False)     
     if static:

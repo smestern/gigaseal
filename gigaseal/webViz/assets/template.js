@@ -198,7 +198,7 @@ $(document).ready(function () {
 
         var layout = {
             autosize: true,
-            height: 300,
+            height: 340,
             margin: {                           // update the left, bottom, right, top margin
                 b: 120, r: 40, t: 30, l: 40
             },
@@ -378,26 +378,47 @@ $(document).ready(function () {
 
         }
 
+        umap_xy = [keys[0], keys[1]];
+        if (CARDS) {
+            // last trace marks the cell under the mouse in the card table
+            highlightTrace = traces.length;
+            traces.push({
+                x: [], y: [], mode: 'markers', name: 'highlight',
+                showlegend: false, hoverinfo: 'skip',
+                marker: { size: 16, color: 'rgba(0,0,0,0)', line: { color: '#212529', width: 2.5 } },
+                unselected: { marker: { opacity: 1 } }
+            });
+        }
+
 
         Plotly.react('graphDiv_scatter', data, layout, { responsive: true, });
         var graphDiv5 = document.getElementById("graphDiv_scatter")
+        // Plotly.react keeps listeners on the div, so drop the previous ones first
+        graphDiv5.removeAllListeners('plotly_selected');
         graphDiv5.on('plotly_selected', function (eventData) {
-            var ids = []
-            var ranges = []
-            if (typeof eventData !== 'undefined') {
-                eventData.points.forEach(function (pt) {
-                    ids.push(pt.text);
-                });
-            } else if (eventData.points.length == 0) {
-                console.log("No points selected, resetting table...");
-                ids = undefined
+            var ids = undefined;
+            if (eventData && eventData.points && eventData.points.length > 0) {
+                ids = eventData.points.map(function (pt) { return pt.text; }).filter(Boolean);
             } else {
                 console.log("No points selected, resetting table...");
-                ids = undefined
             }
 
             filterByID(ids);
         });
+        if (CARDS) {
+            graphDiv5.removeAllListeners('plotly_deselect');
+            graphDiv5.on('plotly_deselect', function () {
+                filterByID(undefined);
+            });
+            graphDiv5.removeAllListeners('plotly_click');
+            graphDiv5.on('plotly_click', function (eventData) {
+                var pt = eventData && eventData.points && eventData.points[0];
+                if (pt && pt.text) {
+                    showCell(pt.text, true);
+                }
+            });
+            highlightCell(state.cell);
+        }
         // graphDiv5.on('plotly_hover', function(data) {
         //     //update the hover innerHTML to display an image
         //     var point = data.points[0];
@@ -600,8 +621,17 @@ $(document).ready(function () {
         table_concatenator(selectedValues);
         //complete refresh
         var selected = $('input[name="label-select"]:checked').val();
+        if (CARDS) {
+            rebuildIndex();
+            state.lasso = null;
+            state.para = null;
+        }
         generate_umap(data_tb, ['Umap X', 'Umap Y', selected]);
         generate_paracoords(data_tb, para_keys, selected)
+        if (CARDS) {
+            applyFilters();
+            return;
+        }
         $table.bootstrapTable('load', data_tb)
         //$table.bootstrapTable('refreshOptions', {detailView: true, detailFormatter : traceFormatter})
         $table.bootstrapTable('refresh')
@@ -609,17 +639,224 @@ $(document).ready(function () {
     }
 
 
+    // ============ Card table (webviz_cfg.table_style == "cards") ============
+    // bootstrap-table only paginates and renders the cards here (cardFormatter in
+    // index.html). Filtering, search and sorting happen on data_tb below, and the
+    // result is pushed with 'load'. Avoid filterBy / sortBy / refreshOptions.
+    var CARDS = typeof webviz_cfg !== 'undefined' && webviz_cfg.table_style === 'cards';
+    var state = { lasso: null, para: null, search: '', sort: { field: '', order: 'asc' }, cell: null };
+    var rowByID = new Map();
+    var searchText = new Map();
+    var highlightTrace = -1;
+    var umap_xy = ['Umap X', 'Umap Y'];
+    var current_para_color = null;
+
+    function rebuildIndex() {
+        rowByID = new Map(data_tb.map(function (row) { return [row.ID, row]; }));
+        searchText = new Map();
+    }
+
+    function rowSearchText(row) {
+        var txt = searchText.get(row.ID);
+        if (txt === undefined) {
+            var cols = webviz_cfg.search_cols.length ? webviz_cfg.search_cols : [webviz_cfg.title_col];
+            txt = cols.map(function (c) { return row[c] == null ? '' : String(row[c]); }).join(' ').toLowerCase();
+            searchText.set(row.ID, txt);
+        }
+        return txt;
+    }
+
+    function compareRows(field, order) {
+        var dir = order === 'desc' ? -1 : 1;
+        return function (a, b) {
+            var va = a[field], vb = b[field];
+            // missing values always sort last
+            if (isMissingValue(va)) return isMissingValue(vb) ? 0 : 1;
+            if (isMissingValue(vb)) return -1;
+            if (typeof va === 'number' && typeof vb === 'number') return dir * (va - vb);
+            return dir * String(va).localeCompare(String(vb), undefined, { numeric: true });
+        };
+    }
+
+    // overrides the template_common.js version (the last declaration wins)
+    function setTableFilter(ids, source, active) {
+        if (!CARDS) {
+            if (ids === null) {
+                $('#table').bootstrapTable('filterBy', {})
+            } else {
+                $('#table').bootstrapTable('filterBy', {'ID': ids});
+            }
+            $table.bootstrapTable('refresh');
+            return;
+        }
+        state[source] = (ids === null || !active) ? null : new Set(ids);
+        // a new lasso regenerates the paracoords plot, which drops its brushes
+        if (source === 'lasso') {
+            state.para = null;
+        }
+        applyFilters();
+    }
+
+    function applyFilters() {
+        var view;
+        if (state.cell !== null) {
+            view = rowByID.has(state.cell) ? [rowByID.get(state.cell)] : [];
+        } else {
+            var q = state.search.trim().toLowerCase();
+            view = data_tb.filter(function (row) {
+                if (state.lasso && !state.lasso.has(row.ID)) return false;
+                if (state.para && !state.para.has(row.ID)) return false;
+                return q === '' || rowSearchText(row).indexOf(q) >= 0;
+            });
+            if (state.sort.field) {
+                view.sort(compareRows(state.sort.field, state.sort.order));
+            }
+        }
+        $table.bootstrapTable('load', view);
+        updateStatus(view.length);
+    }
+
+    function updateStatus(n) {
+        var chips = [];
+        if (state.cell !== null) chips.push('Cell ' + escapeHtml(shortCellID(state.cell)));
+        if (state.lasso) chips.push('UMAP selection: ' + state.lasso.size.toLocaleString());
+        if (state.para) chips.push('Paracoords filter');
+        if (state.search.trim()) chips.push('Search "' + escapeHtml(state.search.trim()) + '"');
+        var html = ['Showing <b>' + n.toLocaleString() + '</b> of ' + data_tb.length.toLocaleString() + ' cells'];
+        chips.forEach(function (chip) { html.push('<span class="filter-chip">' + chip + '</span>'); });
+        if (chips.length) {
+            html.push('<button type="button" class="btn btn-sm btn-outline-secondary" id="table-clear">Clear</button>');
+        }
+        $('#table-status').html(html.join(' '));
+    }
+
+    function clearCellHash() {
+        if (location.hash) {
+            history.replaceState(null, '', location.pathname + location.search);
+        }
+    }
+
+    function showCell(id, updateHash) {
+        if (!rowByID.has(id)) {
+            console.log("Cell not found: " + id);
+            return;
+        }
+        state.cell = id;
+        if (updateHash) {
+            history.replaceState(null, '', '#cell=' + encodeURIComponent(id));
+        }
+        applyFilters();
+        highlightCell(id);
+    }
+
+    function readCellHash() {
+        var m = location.hash.match(/^#cell=(.+)$/);
+        if (m) {
+            showCell(decodeURIComponent(m[1]), false);
+        }
+        return !!m;
+    }
+
+    function highlightCell(id) {
+        if (!CARDS || highlightTrace < 0) return;
+        var row = id === null || id === undefined ? undefined : rowByID.get(id);
+        var gd = document.getElementById('graphDiv_scatter');
+        if (!gd.data || highlightTrace >= gd.data.length) return;
+        Plotly.restyle(gd, {
+            x: [row ? [row[umap_xy[0]]] : []],
+            y: [row ? [row[umap_xy[1]]] : []]
+        }, [highlightTrace]);
+    }
+
+    function clearFilters() {
+        state.lasso = null;
+        state.para = null;
+        state.cell = null;
+        state.search = '';
+        $('#table-search').val('');
+        clearCellHash();
+        var gd = document.getElementById('graphDiv_scatter');
+        restyle_programmatically = true;
+        Plotly.restyle(gd, { selectedpoints: [null] });
+        Plotly.relayout(gd, { selections: [] });
+        restyle_programmatically = false;
+        prev_parallel_IDs = null;
+        prev_filter = '';
+        generate_paracoords(data_tb, paracoordskeys, current_para_color || paracoordscolors);
+        highlightCell(null);
+        applyFilters();
+    }
+
+    function initCardTable() {
+        rebuildIndex();
+        $('#table-toolbar').removeClass('d-none');
+
+        //sort options: card features, then badge columns
+        var $sort = $('#table-sort');
+        webviz_cfg.card_features.forEach(function (f) {
+            var col = typeof f === 'string' ? f : f.col;
+            var label = typeof f === 'string' ? f : (f.label || f.col);
+            $sort.append($('<option>').val(col).text(label));
+        });
+        webviz_cfg.card_badges.forEach(function (col) {
+            $sort.append($('<option>').val(col).text(col));
+        });
+        $sort.on('change', function () {
+            state.sort.field = this.value;
+            applyFilters();
+        });
+        $('#table-sort-dir').on('click', function () {
+            state.sort.order = state.sort.order === 'asc' ? 'desc' : 'asc';
+            $(this).text(state.sort.order === 'asc' ? '↑ asc' : '↓ desc');
+            if (state.sort.field) applyFilters();
+        });
+
+        var searchTimer = null;
+        $('#table-search').on('input', function () {
+            var value = this.value;
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(function () {
+                state.search = value;
+                if (state.cell !== null) {
+                    state.cell = null;
+                    clearCellHash();
+                }
+                applyFilters();
+            }, 200);
+        });
+
+        $('#table-status').on('click', '#table-clear', clearFilters);
+
+        //card <-> UMAP linking
+        $table.on('mouseenter', '.cell-card', function () {
+            highlightCell($(this).attr('data-id'));
+        });
+        $table.on('mouseleave', function () {
+            highlightCell(state.cell);
+        });
+
+        window.addEventListener('hashchange', readCellHash);
+        if (!readCellHash()) {
+            applyFilters();
+        } else {
+            document.getElementById('table-toolbar').scrollIntoView();
+        }
+    }
+
+
     // create the table with pagination for better performance
     // find the table div
     var $table = $('#table')
-    // create the table with pagination enabled
-    $table.bootstrapTable('load', data_tb)
-    $table.bootstrapTable('refreshOptions', {
-        pagination: true,
-        pageSize: 50,
-        pageList: [25, 50, 100, 200]
-    })
-    $table.bootstrapTable('refresh')
+    if (!CARDS) {
+        // create the table with pagination enabled
+        $table.bootstrapTable('load', data_tb)
+        $table.bootstrapTable('refreshOptions', {
+            pagination: true,
+            pageSize: 50,
+            pageList: [25, 50, 100, 200]
+        })
+        $table.bootstrapTable('refresh')
+    }
 
     /* onload */
 
@@ -673,6 +910,14 @@ $(document).ready(function () {
             generate_umap(data_tb, keys);
             generate_paracoords(data_tb, paracoordskeys, selected)
             restyle_programmatically = false;
+            if (CARDS) {
+                // both plots were redrawn, so their selections are gone
+                current_para_color = selected;
+                prev_parallel_IDs = null;
+                state.lasso = null;
+                state.para = null;
+                applyFilters();
+            }
 
         };
     });
@@ -696,14 +941,18 @@ $(document).ready(function () {
 
 
 
-    //add an event listener for table changes
-    $table.on('refresh.bs.table', function (e, name, args) {
-        console.log(e, name, args)
-        //if its a click cell, we actually want to just ignore it
-        generate_plots();
-    });
+    if (CARDS) {
+        initCardTable();
+    } else {
+        //add an event listener for table changes
+        $table.on('refresh.bs.table', function (e, name, args) {
+            console.log(e, name, args)
+            //if its a click cell, we actually want to just ignore it
+            generate_plots();
+        });
 
-    generate_plots();
+        generate_plots();
+    }
 
 
 

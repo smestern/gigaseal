@@ -11,9 +11,8 @@ import shutil
 import pandas as pd
 import numpy as np
 from joblib import dump, load
-from gigaseal.featureExtractor import batch_feature_extract, save_data_frames, analyze_spike_times, analyze_subthres
+from gigaseal.featureExtractor import batch_feature_extract, save_data_frames, analyze_spike_times, analyze_subthres, save_subthres_data
 from gigaseal.patch_utils import load_protocols
-from gigaseal.ipfx_df import save_subthres_data
 import gigaseal.utils as utils
 #from gigaseal.analysis import SpikeAnalysisModule
 import glob
