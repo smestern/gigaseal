@@ -14,7 +14,7 @@ from ipfx import feature_extractor
 from ipfx import subthresh_features as subt
 import pyabf
 
-from gigaseal.patch_utils import build_running_bin
+from gigaseal.patchUtils import build_running_bin
 
 print("Load finished")
 DEBUG = False

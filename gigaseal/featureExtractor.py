@@ -23,7 +23,7 @@ import logging
 #Local imports
 from .loadFile import loadFile, loadABF
 from .dataset import cellData
-from .patch_utils import plotabf, load_protocols, find_non_zero_range, filter_bessel, parse_user_input, sweepNumber_to_real_sweep_number, df_select_by_col, build_running_bin
+from .patchUtils import plotabf, load_protocols, find_non_zero_range, filter_bessel, parse_user_input, sweepNumber_to_real_sweep_number, df_select_by_col, build_running_bin
 from .patch_subthres import exp_decay_factor, membrane_resistance, mem_cap, mem_cap_alt, \
     rmp_mode, compute_sag, exp_decay_factor_alt, exp_growth_factor, determine_subt,  subthres_a, exp_rm_factor, ladder_rm, \
     mem_resist_alt

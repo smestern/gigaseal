@@ -18,7 +18,8 @@ except ImportError:
     print(f"Likely not an issue, this message is for Sam")
 
 try:
-     from ipfx.dataset.hbg_nwb_data import HBGNWBData
+     from ipfx.dataset.hbg_nwb_data import HBGNWBData #this was the old import for HBG NWB data, 
+     #I believe allen has removed it, but its here just in case
 except ImportError:
     print(f"Error importing from ipfx.dataset.hbg_nwb_data")
     print(f"Likely not an issue, this message is for Sam")
@@ -78,6 +79,7 @@ class cellData(object):
             self.dataY = dataY
             self.dataC = dataC
             self.data = [self.dataX, self.dataY, self.dataC]
+            #pyabf like attributes for consistency with pyABF library, even when loading from arrays
             self.clampMode = clampMode
             self.stimUnits = stimUnits
             self.respUnits = respUnits
@@ -96,7 +98,7 @@ class cellData(object):
         self.dataX = self.data[0]
         self.dataY = self.data[1]
         self.dataC = self.data[2]
-    
+        #pyabf like attributes for consistency with pyABF library, even when loading from file
         self.stimUnits = self._file_obj.dacUnits
         self.sweepLabelY = self._file_obj.sweepLabelY
         self.respUnits = self._file_obj.adcUnits
@@ -106,13 +108,23 @@ class cellData(object):
         self.abfFilePath = getattr(self._file_obj, 'abfFilePath', self.filePath)
 
     def setProtocol(self, protocol):
-        """ Some files / datasets may have multiple protocols, this allows the user to set the protocol for the data.
-        This is useful for when the data is loaded from a file, and the protocol is not known
+        """
+        Some files / datasets may have multiple protocols, this allows the user to set the protocol for the data.
+        This is useful for when the data is loaded from a file, and the protocol is not known.
+
+        Parameters:
+        protocol (str): The protocol to set for the dataset.
         """
         self.protocol = protocol
 
     #pyABF.abf like properties
     def setSweep(self, sweep):
+        """
+        Set the current sweep for the dataset.
+
+        Parameters:
+        sweep (int): The index of the sweep to set as current.
+        """
         self.sweep = sweep
         # index into the dataX, dataY, and dataC arrays to get the sweep data
         self.sweepX = self.dataX[sweep]

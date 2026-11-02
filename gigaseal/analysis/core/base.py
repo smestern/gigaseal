@@ -195,7 +195,7 @@ class AnalysisBase:
         -------
         AnalysisResult
         """
-        from ...patch_utils import parse_user_input  # lazy to avoid circular
+        from ...patchUtils import parse_user_input  # lazy to avoid circular
 
         # --- resolve input to a cellData ----------------------------------
         if celldata is not None:

@@ -20,6 +20,6 @@ except ImportError:
     import warnings
     warnings.warn("ipfx is not installed. Some features may not be available.")
 
-from . import patch_utils
+from . import patchUtils
 from . import dataset
 from . import featureExtractor

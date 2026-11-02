@@ -40,7 +40,7 @@ print("Loaded external libraries")
 from gigaseal.featureExtractor import save_data_frames, save_subthres_data, \
 process_file, analyze_subthres, preprocess_abf_subthreshold, determine_rejected_spikes
 from gigaseal.patch_subthres import exp_decay_2p
-from gigaseal.patch_utils import sweepNumber_to_real_sweep_number
+from gigaseal.patchUtils import sweepNumber_to_real_sweep_number
 
 
 # Import the custom analysis modules

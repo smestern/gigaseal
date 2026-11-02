@@ -8,8 +8,8 @@ import json
 import sys
 import logging
 from scipy.signal import resample, decimate
-from gigaseal.patch_ml import *
-from gigaseal.patch_utils import *
+from gigaseal.mlUtils import *
+from gigaseal.patchUtils import *
 from gigaseal.featureExtractor import *
 from gigaseal.loadFile import loadABF
 import pyabf

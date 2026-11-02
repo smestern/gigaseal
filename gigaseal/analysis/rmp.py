@@ -77,7 +77,7 @@ class RmpAnalysis(AnalysisBase):
         dict
             The RMP statistics described in the class docstring.
         """
-        from ..patch_utils import crop_spikes
+        from ..patchUtils import crop_spikes
         #if the end user kwargs override the default parameters, update the instance attributes accordingly.
         for key, value in kwargs.items():
             if hasattr(self, key):

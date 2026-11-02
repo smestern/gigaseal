@@ -57,8 +57,10 @@ def feature_importance(df, labels):
 
 def extract_features(df, ret_labels=False, labels=None):
     """Extract important features from the dataframe. Features are 'important' if they are able to predict the labels. If no labels are provided, 
-    the function will cluster the data and use the clusters as labels. If the labels are provided, the function will encode the labels and use them to predict the features.
-    The function will return the column names of the important features and the labels if ret_labels is True. If ret_labels is False, the function will return the column names of the important features."""
+    the function will cluster the data and use the clusters as labels. 
+    If the labels are provided, the function will encode the labels and use them to predict the features.
+    The function will return the column names of the important features and the labels if ret_labels is True. 
+    If ret_labels is False, the function will return the column names of the important features."""
     #handle the labels
 
     pre_df, outliers = preprocess_df(df)
