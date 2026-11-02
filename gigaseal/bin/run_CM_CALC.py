@@ -215,7 +215,7 @@ def main():
                             temp_df[f"_1 phase Cm {real_sweep_number}"] =  Cm1 * 1000000000000
                             temp_df[f"Voltage sag {real_sweep_number}"],temp_df[f"Voltage min {real_sweep_number}"] = sag, sag_min
                             try:
-                                sag_ratio, taum_allen, voltage_allen = subthres_a(dataT,dataV,dataI, 0.0, np.amax(dataT))
+                                sag_ratio, taum_allen, voltage_allen = subthres_allen(dataT,dataV,dataI, 0.0, np.amax(dataT))
                                 temp_df[f"Voltage sag ratio {real_sweep_number}"] = sag_ratio
                                 temp_df[f"Tau_m Allen {real_sweep_number}"] = taum_allen    
                                 temp_df[f"Voltage sag Allen {real_sweep_number}"] = voltage_allen[0]
@@ -289,7 +289,7 @@ def main():
                         temp_avg["Averaged 2 phase Cm Alt"] =  Cm3 * 1000000000000
                         temp_avg["Averaged 1 phase Cm"] =  Cm1 * 1000000000000
                         try:
-                            sag_ratio, taum_allen, voltage_allen = subthres_a(dataT, np.nanmean(full_dataV[indices_of_same,:],axis=0),
+                            sag_ratio, taum_allen, voltage_allen = subthres_allen(dataT, np.nanmean(full_dataV[indices_of_same,:],axis=0),
                                                                     np.nanmean(full_dataI[indices_of_same,:],axis=0), 0.0, np.amax(dataT))
                             temp_avg[f"Averaged Voltage sag ratio "] = sag_ratio
                             temp_avg[f"Averaged Tau_m Allen "] = taum_allen    

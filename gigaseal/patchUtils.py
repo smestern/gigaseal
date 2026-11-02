@@ -164,6 +164,27 @@ def find_non_zero_range(dataT, dataI):
         return (0, 0)
     return (dataT[non_zero_points[0]], dataT[non_zero_points[-1]])
 
+
+def find_hyperpolarization_segment(dataT, dataI, lowerlim, upperlim):
+    """Finds the hyperpolarization segment, assuming the current is a square pulse. Or the hyperpolarization is continuous.
+
+    Args:
+        dataT (array-like): Time points of the recording.
+        dataI (array-like): Injected current data.
+        lowerlim (float): Lower limit for the hyperpolarization segment.
+        upperlim (float): Upper limit for the hyperpolarization segment.
+    """
+    #copy dataI so we dont change the original
+    dataI = dataI.copy()
+    #clip greater than 0 to 0
+    dataI[dataI>0] = 0
+    #find the first point where the current is negative
+    downwardinfl = np.nonzero(np.where(dataI<0, dataI, 0))[0][0]
+    #find the last point where the current is negative
+    upwardinfl = np.nonzero(np.where(dataI<0, dataI, 0))[0][-1]
+    return downwardinfl, upwardinfl
+
+
 def filter_bessel(data_V, fs, cutoff):
     """ Internal bessel filter function. This function is used to filter the data using a bessel filter.
       The cutoff frequency is set to 5 kHz by default. If the cutoff frequency is lower than the critical frequency, the data is filtered. Otherwise, the data is returned unfiltered.

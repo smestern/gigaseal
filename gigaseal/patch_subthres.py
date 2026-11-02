@@ -15,6 +15,7 @@ from ipfx import feature_extractor as fx
 from . import utils
 import pyabf
 from . import loadFile
+from .analysis.subthreshold import find_hyperpolarization_segment, subthres_allen
 
 ##Declare our options at default
 def exp_grow(t, a, b, alpha):
@@ -476,55 +477,6 @@ def ladder_rm(dataT, dataV, dataI, mean_current=False):
     return slope, intercept, len(non_spike_sweeps)
 
 
-@utils.debug_wrap
-def subthres_a(dataT, dataV, dataI, lowerlim, upperlim) -> tuple[float, float, tuple[float, float]]:
-    """Analyze the subthreshold features of the current using allen institute's method.
 
-    Args:
-        dataT (_type_): _description_
-        dataV (_type_): _description_
-        dataI (_type_): _description_
-        lowerlim (_type_): _description_
-        upperlim (_type_): _description_
-
-    Returns:
-        _type_: _description_
-    """
-    if dataI[np.argmin(dataI)] < 0: #if the current is negative check, this is a hyperpolarizing current injection, we can compute the sag and the time constant of the decay
-        if lowerlim < 0.1:
-            b_lowerlim = 0.1
-        else:
-            b_lowerlim = lowerlim
-
-        #get only the hyperpor segments
-        dwninf, upinf = find_hyperpolarization_segment(dataT, dataI, lowerlim, upperlim)
-        lowerlim_t = np.clip(dataT[dwninf]  - 0.1, 0, 1e9)
-        upperlim_t = dataT[upinf]
-
-        #temp_spike_df['baseline voltage' + real_sweep_number] = subt.baseline_voltage(dataT, dataV, start=b_lowerlim)
-        sag = subt.sag(dataT,dataV,dataI, start=lowerlim_t, end=upperlim_t)
-        taum = subt.time_constant(dataT,dataV,dataI, start=lowerlim_t, end=upperlim_t)
-        
-        voltage_deflection = subt.voltage_deflection(dataT,dataV,dataI, start=lowerlim_t, end=upperlim_t)
-        return sag, taum, voltage_deflection
-                        
     
 
-def find_hyperpolarization_segment(dataT, dataI, lowerlim, upperlim):
-    """Finds the hyperpolarization segment, assuming the current is a square pulse. Or the hyperpolarization is continuous.
-
-    Args:
-        dataT (_type_): _description_
-        dataI (_type_): _description_
-        lowerlim (_type_): _description_
-        upperlim (_type_): _description_
-    """
-    #copy dataI so we dont change the original
-    dataI = dataI.copy()
-    #clip greater than 0 to 0
-    dataI[dataI>0] = 0
-    #find the first point where the current is negative
-    downwardinfl = np.nonzero(np.where(dataI<0, dataI, 0))[0][0]
-    #find the last point where the current is negative
-    upwardinfl = np.nonzero(np.where(dataI<0, dataI, 0))[0][-1]
-    return downwardinfl, upwardinfl

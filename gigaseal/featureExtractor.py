@@ -25,7 +25,7 @@ from .loadFile import loadFile, loadABF
 from .dataset import cellData
 from .patchUtils import plotabf, load_protocols, find_non_zero_range, filter_bessel, parse_user_input, sweepNumber_to_real_sweep_number, df_select_by_col, build_running_bin
 from .patch_subthres import exp_decay_factor, membrane_resistance, mem_cap, mem_cap_alt, \
-    rmp_mode, compute_sag, exp_decay_factor_alt, exp_growth_factor, determine_subt,  subthres_a, exp_rm_factor, ladder_rm, \
+    rmp_mode, compute_sag, exp_decay_factor_alt, exp_growth_factor, determine_subt,  subthres_allen, exp_rm_factor, ladder_rm, \
     mem_resist_alt
     
 from ._legacy.QC import run_qc
@@ -368,7 +368,7 @@ def process_file(file_path, param_dict, protocol_name):
 def _custom_sweepwise_features(sweepX, sweepY, sweepC, real_sweep_number, param_dict, spike_df, rawspike_df):
     custom_features = {}
     try:
-        sag, taum, voltage = subthres_a(sweepX, sweepY, sweepC, param_dict['start'], param_dict['end'])
+        sag, taum, voltage = subthres_allen(sweepX, sweepY, sweepC, param_dict['start'], param_dict['end'])
         custom_features["Sag Ratio " + real_sweep_number + ""] = sag
         custom_features["Taum " + real_sweep_number + ""] = taum
     except:
@@ -684,7 +684,7 @@ def analyze_subthres(x=None, y=None, c=None, file=None, protocol_name='', savfil
             temp_df[f"1 phase Cm {real_sweep_number}"] = Cm1 * 1000000000000
             temp_df[f"Voltage sag {real_sweep_number}"], temp_df[f"Voltage min {real_sweep_number}"] = compute_sag(dataT, dataV, dataI, time_after, plot=bplot, clear=False)
             try:
-                sag_ratio, taum_allen, voltage_allen = subthres_a(dataT, dataV, dataI, 0.0, np.amax(dataT))
+                sag_ratio, taum_allen, voltage_allen = subthres_allen(dataT, dataV, dataI, 0.0, np.amax(dataT))
                 temp_df[f"Voltage sag ratio {real_sweep_number}"] = sag_ratio
                 temp_df[f"Tau_m Allen {real_sweep_number}"] = taum_allen
                 temp_df[f"Voltage sag Allen {real_sweep_number}"] = voltage_allen[0]
@@ -790,7 +790,7 @@ def analyze_subthres(x=None, y=None, c=None, file=None, protocol_name='', savfil
         temp_avg["Averaged 2 phase Cm Alt"] = Cm3 * 1000000000000
         temp_avg["Averaged 1 phase Cm"] = Cm1 * 1000000000000
         try:
-            sag_ratio, taum_allen, voltage_allen = subthres_a(dataT, np.nanmean(full_dataV[indices_of_same, :], axis=0),
+            sag_ratio, taum_allen, voltage_allen = subthres_allen(dataT, np.nanmean(full_dataV[indices_of_same, :], axis=0),
                                                               np.nanmean(full_dataI[indices_of_same, :], axis=0), 0.0, np.amax(dataT))
             temp_avg[f"Averaged Voltage sag ratio "] = sag_ratio
             temp_avg[f"Averaged Tau_m Allen "] = taum_allen

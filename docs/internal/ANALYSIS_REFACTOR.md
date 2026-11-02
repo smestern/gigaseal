@@ -26,7 +26,7 @@ The `gigaseal.analysis` submodule was rebuilt from scratch to be **simple, modul
 | `gigaseal/analysis/core/runner.py` | `run_batch()`, `save_results()` — batch processing with optional `ProcessPoolExecutor` and `progress_callback` |
 | `gigaseal/analysis/analysis_configs.json` | Parameter presets (`spike_analysis_standard`, `spike_analysis_sensitive`, `subthreshold_standard`, `subthreshold_detailed`) |
 | `gigaseal/analysis/spike.py` | `SpikeAnalysis` (per-sweep, wraps `featureExtractor.analyze_sweep()`) and `LegacySpikeAnalysis` (per-file, wraps legacy `featureExtractor.analyze()`) |
-| `gigaseal/analysis/subthreshold.py` | `SubthresholdAnalysis` — wraps `patch_subthres.subthres_a()` |
+| `gigaseal/analysis/subthreshold.py` | `SubthresholdAnalysis` — wraps `patch_subthres.subthres_allen()` |
 | `gigaseal/analysis/example.py` | `PeakDetector` — minimal example for new users (~10 lines of user code); demo only, hidden from the GUI |
 | `gigaseal/analysis/__init__.py` | Public API exports, built-in registration, and backward-compatible shims for GUI (see below) |
 | `tests/test_analysis_framework.py` | 26 tests covering results, base class, registry, demo data integration (incl. `LegacySpikeAnalysis`), and legacy imports |

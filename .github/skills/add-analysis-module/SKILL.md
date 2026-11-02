@@ -30,7 +30,7 @@ Ask the user (use the ask-questions tool if available):
 3. **`sweep_mode`**: `per_sweep` (framework iterates, you get 1-D arrays) or `per_file` (you get 2-D `(sweeps × samples)` arrays and iterate yourself).
 4. **Parameters** with default values and types (each becomes a typed class attribute, e.g. `threshold: float = -20.0`).
 5. **Output keys** — what columns should appear in the result DataFrame.
-6. **Wrapping a legacy function?** If yes, which one (e.g. `featureExtractor.analyze_sweep`, `patch_subthres.subthres_a`).
+6. **Wrapping a legacy function?** If yes, which one (e.g. `featureExtractor.analyze_sweep`, `patch_subthres.subthres_allen`).
 
 ### 2. Create the module file
 

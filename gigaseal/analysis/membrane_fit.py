@@ -33,7 +33,7 @@ class MembraneAnalysis(AnalysisBase):
     :func:`exp_decay_factor`, :func:`exp_decay_factor_alt`,
     :func:`membrane_resistance`, :func:`mem_cap`, :func:`mem_cap_alt`,
     :func:`compute_sag`, :func:`rmp_mode`, :func:`determine_subt`, and
-    :func:`subthres_a`.
+    :func:`subthres_allen`.
 
     Runs in ``per_file`` mode because subthreshold-sweep selection and the
     across-sweep averaged fit both require the full 2-D data.
@@ -97,7 +97,7 @@ class MembraneAnalysis(AnalysisBase):
         #    (1-indexed, comma-separated) or fall back to
         #    patch_subthres.determine_subt.
         #  * Per sweep: exp_decay_factor -> membrane_resistance -> mem_cap /
-        #    mem_cap_alt -> compute_sag -> subthres_a; unit-convert
+        #    mem_cap_alt -> compute_sag -> subthres_allen; unit-convert
         #    resistance to GΩ and capacitance to pF as in the legacy script.
         #  * Compute the across-sweep averaged fit via exp_decay_factor_alt.
         #  * Import scipy / patch_subthres lazily inside this method.
